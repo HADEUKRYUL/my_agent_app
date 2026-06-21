@@ -1,1 +1,4 @@
 openai
+PyPDF2
+pandas
+python-pptx
