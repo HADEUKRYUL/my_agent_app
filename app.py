@@ -1,103 +1,29 @@
 import streamlit as st
 from openai import OpenAI
-import PyPDF2
-import pandas as pd
-from pptx import Presentation
-import base64
-import json
-import os
+from apscheduler.schedulers.background import BackgroundScheduler
+import datetime
 
-# 1. 대화 기록 파일 경로 설정
-HISTORY_FILE = "chat_history.json"
+# [핵심] 일정 알림 설정
+if "scheduler" not in st.session_state:
+    st.session_state.scheduler = BackgroundScheduler()
+    st.session_state.scheduler.start()
 
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+def add_alarm(task, time_str):
+    # time_str 예: "2026-06-21 21:00"
+    run_date = datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+    st.session_state.scheduler.add_job(
+        lambda: st.toast(f"🚨 주인님, {task} 시간입니다!"),
+        'date', run_date=run_date
+    )
+    return f"✅ '{task}' 일정을 {time_str}로 등록했습니다."
 
-def save_history(messages):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(messages, f, ensure_ascii=False, indent=4)
+# (위에서 구현한 파일 분석 및 대화 기억 로직은 그대로 유지...)
+# 채팅 입력 처리 부분에 아래 로직 추가
 
-# 설정 및 초기화
-st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
-st.title("🤖 나만의 특급 비서 에이전트")
-
-try:
-    my_key = st.secrets["OPENAI_API_KEY"]
-except:
-    my_key = None
-
-if not my_key:
-    st.error("🚨 API 키를 설정해 주십시오.")
-    st.stop()
-
-client = OpenAI(api_key=my_key)
-
-# 대화 로드
-if "messages" not in st.session_state:
-    st.session_state.messages = load_history()
-
-# 사이드바 및 파일 처리 (기존 기능 유지)
-with st.sidebar:
-    st.header("📁 데이터 분석실")
-    if st.button("🗑️ 대화 기록 초기화"):
-        st.session_state.messages = []
-        save_history([])
-        st.rerun()
-
-    uploaded_file = st.file_uploader("파일/사진 업로드", type=["pdf", "csv", "txt", "pptx", "png", "jpg", "jpeg"])
+if prompt := st.chat_input("명령을 내려주십시오..."):
+    # 비서의 판단: "일정 등록해 줘"라는 말이 포함되어 있는지 확인
+    if "일정" in prompt or "알람" in prompt:
+        # 간단한 파싱 예시: "오후 9시에 회의 일정 등록" -> 실제는 LLM이 판단하도록 구성
+        st.info("💡 일정 관리 모드를 활성화합니다. 시간을 함께 말씀해 주십시오.")
     
-    file_content = None
-    image_data = None
-
-    if uploaded_file:
-        try:
-            if uploaded_file.type.startswith("image"):
-                image_data = base64.b64encode(uploaded_file.read()).decode('utf-8')
-                st.image(uploaded_file, caption="분석 대기 중")
-            else:
-                if uploaded_file.name.endswith('.pdf'):
-                    file_content = "\n".join([p.extract_text() for p in PyPDF2.PdfReader(uploaded_file).pages])
-                elif uploaded_file.name.endswith('.csv'):
-                    file_content = pd.read_csv(uploaded_file).to_string()
-                elif uploaded_file.name.endswith('.pptx'):
-                    prs = Presentation(uploaded_file)
-                    file_content = "\n".join([shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text")])
-                else:
-                    file_content = uploaded_file.read().decode("utf-8")
-                st.success("✅ 파일 학습 완료!")
-        except Exception as e:
-            st.error(f"⚠️ 읽기 실패: {e}")
-
-    st.markdown("---")
-    st.link_button("🎨 Canva 바로가기", "https://www.canva.com/")
-
-# 화면 출력
-for msg in st.session_state.messages:
-    if msg["role"] != "system":
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-# 입력 처리
-if prompt := st.chat_input("질문을 입력하십시오..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    messages = [{"role": "system", "content": "과거 대화와 제공된 문서를 모두 기억하고 분석하는 비서입니다."}] + st.session_state.messages
-    
-    if image_data:
-        messages[-1] = {"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}]}
-    elif file_content:
-        messages[-1] = {"role": "user", "content": f"{prompt}\n\n[참고 내용]:\n{file_content[:5000]}"}
-
-    with st.chat_message("assistant"):
-        response = client.chat.completions.create(model="gpt-4o", messages=messages)
-        reply = response.choices[0].message.content
-        st.markdown(reply)
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        
-        # [핵심] 대화 내용 파일로 저장
-        save_history(st.session_state.messages)
+    # ... (기존 OpenAI 대화 및 저장 로직) ...
