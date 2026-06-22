@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import datetime
+import math
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # 💾 1. 영구 기억 저장소
@@ -27,10 +28,16 @@ def save_json(file_path, data):
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 에러 방지용 숫자 변환 함수
+# [핵심 보완] 엑셀 빈칸(결측치) 완벽 방어용 숫자 변환 함수
 def safe_float(val):
     try:
-        return float(str(val).replace(',', '').strip())
+        if pd.isna(val):
+            return 0.0
+        val_str = str(val).replace(',', '').strip()
+        if not val_str or val_str.lower() in ['nan', 'nat', 'null']:
+            return 0.0
+        f = float(val_str)
+        return 0.0 if math.isnan(f) else f
     except:
         return 0.0
 
@@ -42,7 +49,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("대화, 일정 관리, 누적 실적 및 위험 라인(가동율 80%↓, 500 PPM↑) 자동 감지 시스템")
+st.caption("대화, 일정, 누적 실적 및 위험 라인(가동율 80%↓, 500 PPM↑) 자동 감지 시스템")
 
 # 🔑 4. API 키 설정
 try:
@@ -81,14 +88,12 @@ with st.sidebar:
 
     if uploaded_file:
         try:
-            # 사진(Vision) 처리
             if uploaded_file.type.startswith("image"):
                 image_data = base64.b64encode(uploaded_file.read()).decode('utf-8')
                 mime_type = uploaded_file.type
                 st.image(uploaded_file, caption="분석 대기 사진")
                 st.success("✅ 사진 인식 완료!")
             
-            # 생산 실적 파일 분석 및 '일자별' 누적 저장
             elif uploaded_file.name.endswith('.csv') or uploaded_file.name.endswith('.xlsx'):
                 df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
                 file_content = df_upload.to_string()
@@ -108,25 +113,33 @@ with st.sidebar:
                 if line_col and target_col and passed_col and defect_col:
                     today_str = datetime.date.today().strftime("%Y-%m-%d")
                     
-                    # 충돌 방지: JSON에는 핵심 수량 3가지만 깨끗하게 저장합니다.
                     for _, row in df_upload.iterrows():
                         line_name = str(row[line_col]).strip()
-                        if line_name == 'nan' or not line_name:
+                        if line_name.lower() in ['nan', 'nat', 'null', ''] or pd.isna(row[line_col]):
                             continue
                             
+                        t_val = safe_float(row[target_col])
+                        p_val = safe_float(row[passed_col])
+                        d_val = safe_float(row[defect_col])
+                        
+                        # 업로드 시 로우별 가동율, 이용율 계산
+                        op_rate = t_val / p_val if p_val > 0 else 0.0
+                        util_rate = p_val / t_val if t_val > 0 else 0.0
+                        
                         st.session_state.production_history.append({
                             "Date": today_str,
                             "Line": line_name,
-                            "Target": safe_float(row[target_col]),
-                            "Passed": safe_float(row[passed_col]),
-                            "Defect": safe_float(row[defect_col])
+                            "Target": t_val,
+                            "Passed": p_val,
+                            "Defect": d_val,
+                            "OpRate": op_rate,
+                            "UtilRate": util_rate
                         })
                     save_json(PRODUCTION_FILE, st.session_state.production_history)
                     st.success("✅ 오늘자 생산 실적이 [일자별 누적 데이터베이스]에 기록되었습니다!")
                 else:
                     st.warning("⚠️ 엑셀 열 제목(라인명, 목표수량, 양품수량, 불량수량)을 확인해 주십시오.")
             
-            # 일반 문서 처리
             elif uploaded_file.name.endswith('.pdf'):
                 file_content = "\n".join([p.extract_text() for p in PyPDF2.PdfReader(uploaded_file).pages])
                 st.success("✅ PDF 학습 완료!")
@@ -176,7 +189,7 @@ with tab1:
         else:
             with st.chat_message("assistant"):
                 with st.spinner("분석 중..."):
-                    system_instruction = "당신은 주인님의 충직한 개인 비서입니다. 과거 대화와 업로드 데이터를 바탕으로 완벽히 보좌하세요."
+                    system_instruction = "당신은 주인님의 충직한 개인 비서입니다. 베트남 현장의 정보와 업로드 데이터를 바탕으로 완벽히 보좌하세요."
                     messages_for_api = [{"role": "system", "content": system_instruction}] + st.session_state.messages[:-1]
                     
                     if image_data:
@@ -220,15 +233,14 @@ with tab2:
         st.dataframe(df_schedule.sort_values(by="DateTime").reset_index(drop=True), use_container_width=True)
 
 # ==========================================
-# 탭 3: 실적 현황 (결측치 완벽 차단 및 평균 연산 적용)
+# 탭 3: 실적 현황 (결측치 차단, 평균 연산, PPM 공식 적용)
 # ==========================================
 with tab3:
-    st.subheader("📊 실적 현황 (누적 및 위험 모니터링)")
+    st.subheader("📊 실적 현황 (누적 및 위험 감지 모니터링)")
     
     if st.session_state.production_history:
         df_hist = pd.DataFrame(st.session_state.production_history)
         
-        # 만약 과거 데이터에 누락된 항목이 있다면 0으로 안전하게 채움
         for col in ['Target', 'Passed', 'Defect']:
             if col not in df_hist.columns:
                 df_hist[col] = 0.0
@@ -236,29 +248,25 @@ with tab3:
         df_hist['Date_dt'] = pd.to_datetime(df_hist['Date'])
         df_hist['Month'] = df_hist['Date_dt'].dt.strftime('%Y-%m')
         
-        # [핵심 보완] 로우(Row) 단위로 가동율, 이용율을 미리 계산 (나중에 평균내기 위함)
-        df_hist['OpRate'] = df_hist.apply(lambda r: r['Target'] / r['Passed'] if r['Passed'] > 0 else 0, axis=1)
-        df_hist['UtilRate'] = df_hist.apply(lambda r: r['Passed'] / r['Target'] if r['Target'] > 0 else 0, axis=1)
-        
         current_month = datetime.date.today().strftime('%Y-%m')
-        st.markdown(f"### 📅 당월 ({current_month}) Line* 명 실적 종합")
+        st.markdown(f"### 📅 당월 ({current_month}) 라인별 실적 종합")
         
         df_current = df_hist[df_hist['Month'] == current_month]
         
         if not df_current.empty:
-            # 1. 수량은 합산(sum), 비율(가동율/이용율)은 평균(mean)으로 그룹화!
+            # 1. 수량은 합산(sum), 비율(가동율/이용율)은 평균(mean)으로 그룹화 연산
             df_grouped = df_current.groupby('Line').agg({
                 'Target': 'sum',
                 'Passed': 'sum',
                 'Defect': 'sum',
-                'OpRate': 'mean',    # 평균 연산
-                'UtilRate': 'mean'   # 평균 연산
+                'OpRate': 'mean',    
+                'UtilRate': 'mean'   
             }).reset_index()
             
-            # 2. PPM 연산 (불량수량 / 양품수량 * 1,000,000)
-            df_grouped['PPM'] = df_grouped.apply(lambda r: (r['Defect'] / r['Passed']) * 1000000 if r['Passed'] > 0 else 0, axis=1)
+            # 2. PPM 연산: 불량수량 / 양품수량 * 1,000,000
+            df_grouped['PPM'] = df_grouped.apply(lambda r: (r['Defect'] / r['Passed']) * 1000000 if r['Passed'] > 0 else 0.0, axis=1)
             
-            # 3. 명칭 적용
+            # 3. 요구 명칭 적용 (LINE* -> 라인명)
             df_display = df_grouped.rename(columns={
                 'Line': '라인명',
                 'Target': '목표수량',
@@ -278,22 +286,22 @@ with tab3:
             }), use_container_width=True)
             
             # 4. 필터링 차트 (가동율 80% 이하, PPM 500 이상만 추출)
-            st.markdown("### 🚨 라인별 핵심 지표 모니터링")
+            st.markdown("### 🚨 핵심 지표 모니터링 (위험 라인 색출)")
             g_col1, g_col2 = st.columns(2)
             
             with g_col1:
                 st.markdown("**📉 가동율 80% 이하 라인**")
                 df_under_80 = df_display[df_display['가동율'] <= 0.8]
                 if not df_under_80.empty:
-                    st.bar_chart(df_under_80.set_index('Line* 명')[['가동율']])
+                    st.bar_chart(df_under_80.set_index('라인명')[['가동율']])
                 else:
                     st.success("전체 라인 가동율 양호 (80% 초과)")
                     
             with g_col2:
-                st.markdown("**🔥 PPM (500 이상 라인명 표출)**")
+                st.markdown("**🔥 PPM** (500 PPM 이상 불량 라인)")
                 df_over_500 = df_display[df_display['PPM'] >= 500]
                 if not df_over_500.empty:
-                    st.bar_chart(df_over_500.set_index('Line* 명')[['PPM']])
+                    st.bar_chart(df_over_500.set_index('라인명')[['PPM']])
                 else:
                     st.success("전체 라인 불량 상태 양호 (500 PPM 미만)")
         else:
@@ -307,7 +315,6 @@ with tab3:
             'Passed': 'sum'
         }).reset_index()
         
-        # 일자별 누적(Cumulative Sum) 산출
         df_daily = df_daily.sort_values('Date_dt')
         df_daily['누적 목표수량'] = df_daily['Target'].cumsum()
         df_daily['누적 양품수량'] = df_daily['Passed'].cumsum()
@@ -315,4 +322,4 @@ with tab3:
         st.line_chart(df_daily.set_index('Date_dt')[['누적 목표수량', '누적 양품수량']])
         
     else:
-        st.info("👈 왼쪽 파일 업로드 창에 오늘자 실적 데이터(Excel/CSV)를 투입해 주십시오.")
+        st.info("👈 왼쪽 파일 업로드 창에 실적 데이터(Excel/CSV)를 투입해 주십시오.")
