@@ -28,7 +28,7 @@ def save_json(file_path, data):
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# [핵심 보완] 엑셀 빈칸(결측치) 완벽 방어용 숫자 변환 함수
+# 에러 방지용 안전 숫자 변환 함수
 def safe_float(val):
     try:
         if pd.isna(val):
@@ -118,22 +118,13 @@ with st.sidebar:
                         if line_name.lower() in ['nan', 'nat', 'null', ''] or pd.isna(row[line_col]):
                             continue
                             
-                        t_val = safe_float(row[target_col])
-                        p_val = safe_float(row[passed_col])
-                        d_val = safe_float(row[defect_col])
-                        
-                        # 업로드 시 로우별 가동율, 이용율 계산
-                        op_rate = t_val / p_val if p_val > 0 else 0.0
-                        util_rate = p_val / t_val if t_val > 0 else 0.0
-                        
+                        # 수량 데이터만 깔끔하게 저장 (이용율 계산 로직 삭제)
                         st.session_state.production_history.append({
                             "Date": today_str,
                             "Line": line_name,
-                            "Target": t_val,
-                            "Passed": p_val,
-                            "Defect": d_val,
-                            "OpRate": op_rate,
-                            "UtilRate": util_rate
+                            "Target": safe_float(row[target_col]),
+                            "Passed": safe_float(row[passed_col]),
+                            "Defect": safe_float(row[defect_col])
                         })
                     save_json(PRODUCTION_FILE, st.session_state.production_history)
                     st.success("✅ 오늘자 생산 실적이 [일자별 누적 데이터베이스]에 기록되었습니다!")
@@ -233,7 +224,7 @@ with tab2:
         st.dataframe(df_schedule.sort_values(by="DateTime").reset_index(drop=True), use_container_width=True)
 
 # ==========================================
-# 탭 3: 실적 현황 (결측치 차단, 평균 연산, PPM 공식 적용)
+# 탭 3: 실적 현황 (이용율 삭제 및 가동율 공식 반영)
 # ==========================================
 with tab3:
     st.subheader("📊 실적 현황 (누적 및 위험 감지 모니터링)")
@@ -254,26 +245,25 @@ with tab3:
         df_current = df_hist[df_hist['Month'] == current_month]
         
         if not df_current.empty:
-            # 1. 수량은 합산(sum), 비율(가동율/이용율)은 평균(mean)으로 그룹화 연산
+            # 1. 수량 합산 (이용율 관련 코드 완전 삭제)
             df_grouped = df_current.groupby('Line').agg({
                 'Target': 'sum',
                 'Passed': 'sum',
-                'Defect': 'sum',
-                'OpRate': 'mean',    
-                'UtilRate': 'mean'   
+                'Defect': 'sum'
             }).reset_index()
             
-            # 2. PPM 연산: 불량수량 / 양품수량 * 1,000,000
+            # 2. 지시하신 가동율(목표수량 / 양품수량) 공식 적용
+            df_grouped['가동율'] = df_grouped.apply(lambda r: r['Target'] / r['Passed'] if r['Passed'] > 0 else 0.0, axis=1)
+            
+            # 3. PPM 연산 (불량수량 / 양품수량 * 1,000,000)
             df_grouped['PPM'] = df_grouped.apply(lambda r: (r['Defect'] / r['Passed']) * 1000000 if r['Passed'] > 0 else 0.0, axis=1)
             
-            # 3. 요구 명칭 적용 (LINE* -> 라인명)
+            # 4. 명칭 적용
             df_display = df_grouped.rename(columns={
                 'Line': '라인명',
                 'Target': '목표수량',
                 'Passed': '양품수량',
-                'Defect': '불량수량',
-                'OpRate': '가동율',
-                'UtilRate': '이용율'
+                'Defect': '불량수량'
             })
             
             st.dataframe(df_display.style.format({
@@ -281,11 +271,10 @@ with tab3:
                 '양품수량': '{:,.0f}',
                 '불량수량': '{:,.0f}',
                 '가동율': '{:.1%}',
-                '이용율': '{:.1%}',
                 'PPM': '{:,.0f} PPM'
             }), use_container_width=True)
             
-            # 4. 필터링 차트 (가동율 80% 이하, PPM 500 이상만 추출)
+            # 5. 필터링 차트 (가동율 80% 이하, PPM 500 이상만 추출)
             st.markdown("### 🚨 핵심 지표 모니터링 (위험 라인 색출)")
             g_col1, g_col2 = st.columns(2)
             
@@ -307,7 +296,7 @@ with tab3:
         else:
             st.info("이번 달 실적 데이터가 아직 업로드되지 않았습니다.")
             
-        # 5. 매일 누적되는 일자별 장기 트렌드 지표
+        # 6. 매일 누적되는 일자별 장기 트렌드 지표
         st.markdown("---")
         st.markdown("### 📈 일자별 누적 생산 지표 트렌드")
         df_daily = df_hist.groupby(df_hist['Date_dt'].dt.strftime('%Y-%m-%d')).agg({
