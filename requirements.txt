@@ -3,3 +3,4 @@ PyPDF2
 pandas
 python-pptx
 apscheduler
+openpyxl
