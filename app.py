@@ -31,7 +31,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("대화, 일정 관리, 생산 대시보드까지 완벽하게 보좌하겠습니다.")
+st.caption("대화, 일정 관리, 그리고 동일 라인별 수량·가동률 정밀 분석 대시보드로 보좌합니다.")
 
 # 🔑 4. API 키 설정
 try:
@@ -60,13 +60,12 @@ with st.sidebar:
         save_json(HISTORY_FILE, [])
         st.rerun()
 
-    # 엑셀(xlsx) 확장자 추가
     uploaded_file = st.file_uploader("문서, 사진, 또는 생산실적(CSV/Excel) 업로드", type=["pdf", "csv", "xlsx", "txt", "pptx", "png", "jpg", "jpeg"])
     
     file_content = None
     image_data = None
     mime_type = None
-    df_dashboard = None # 대시보드용 데이터프레임
+    df_dashboard = None 
 
     if uploaded_file:
         try:
@@ -77,14 +76,14 @@ with st.sidebar:
                 st.image(uploaded_file, caption="분석 대기 중인 사진")
                 st.success("✅ 사진 인식 완료!")
             
-            # 생산 실적 엑셀/CSV 데이터 처리 (대시보드용)
+            # 생산 실적 데이터 처리 (대시보드 확장)
             elif uploaded_file.name.endswith('.csv') or uploaded_file.name.endswith('.xlsx'):
                 if uploaded_file.name.endswith('.csv'):
                     df_dashboard = pd.read_csv(uploaded_file)
                 else:
                     df_dashboard = pd.read_excel(uploaded_file)
                 file_content = df_dashboard.to_string()
-                st.success("✅ 생산 실적 데이터 로드 완료! 상단의 [📊 생산 대시보드] 탭을 확인하십시오.")
+                st.success("✅ 생산 실적 데이터 분석 성공! 상단의 [📊 생산 실적 대시보드] 탭을 확인하십시오.")
             
             # 일반 문서 처리
             elif uploaded_file.name.endswith('.pdf'):
@@ -103,11 +102,11 @@ with st.sidebar:
     st.markdown("---")
     st.link_button("🎨 Canva (캔바) 바로가기", "https://www.canva.com/")
 
-# 📱 7. 화면을 3개의 탭(Tab)으로 깔끔하게 분리
+# 📱 7. 화면을 3개의 탭(Tab)으로 분리
 tab1, tab2, tab3 = st.tabs(["💬 비서와의 대화", "📅 일정 관리표", "📊 생산 실적 대시보드"])
 
 # ==========================================
-# 탭 1: 비서와의 대화 (기존 기능)
+# 탭 1: 비서와의 대화
 # ==========================================
 with tab1:
     for msg in st.session_state.messages:
@@ -162,15 +161,13 @@ with tab1:
 # ==========================================
 with tab2:
     st.subheader("📅 주인님의 일정표")
-    
-    # 새 일정 추가 기능
     with st.expander("➕ 새 일정 등록하기", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
             new_date = st.date_input("날짜 선택")
             new_time = st.time_input("시간 선택")
         with col2:
-            new_task = st.text_input("일정 내용 (예: 라인장 회의, 베트남어 수업)")
+            new_task = st.text_input("일정 내용")
             if st.button("일정 저장"):
                 if new_task:
                     datetime_str = f"{new_date} {new_time.strftime('%H:%M')}"
@@ -181,12 +178,10 @@ with tab2:
                 else:
                     st.warning("일정 내용을 입력해 주십시오.")
 
-    # 저장된 일정 목록을 표 형식으로 보여주기
     if st.session_state.schedules:
         df_schedule = pd.DataFrame(st.session_state.schedules)
         df_schedule = df_schedule.sort_values(by="DateTime").reset_index(drop=True)
         st.dataframe(df_schedule, use_container_width=True)
-        
         if st.button("🗑️ 완료된 지난 일정 모두 지우기"):
             st.session_state.schedules = []
             save_json(SCHEDULE_FILE, [])
@@ -195,34 +190,70 @@ with tab2:
         st.info("현재 등록된 일정이 없습니다.")
 
 # ==========================================
-# 탭 3: 생산 실적 대시보드
+# 탭 3: 생산 실적 대시보드 (수량 및 가동률 정밀 고도화)
 # ==========================================
 with tab3:
-    st.subheader("📊 라인별 생산 실적 대시보드")
+    st.subheader("📊 라인별 실적 정밀 대시보드")
     
     if df_dashboard is not None:
-        st.success("업로드된 실적 데이터를 분석하여 대시보드를 생성했습니다.")
-        
-        # 원본 데이터 표 출력
-        with st.expander("📑 원본 데이터 보기"):
-            st.dataframe(df_dashboard, use_container_width=True)
-        
-        # 엑셀 데이터에 숫자형 데이터가 있다면 자동으로 그래프 생성
-        numeric_cols = df_dashboard.select_dtypes(include=['float64', 'int64']).columns
-        
-        if len(numeric_cols) > 0:
-            st.markdown("### 📈 항목별 실적 그래프")
-            # 만약 '라인', 'Line', '구분' 등의 열이 있다면 그것을 X축으로 사용
-            possible_x_axes = [col for col in df_dashboard.columns if '라인' in str(col) or 'line' in str(col).lower() or '구분' in str(col)]
+        # 1. 엑셀 파일 내 주요 키워드 자동 매핑 엔진
+        line_col, qty_col, util_col = None, None, None
+        for col in df_dashboard.columns:
+            col_str = str(col).lower().strip()
+            if any(k in col_str for k in ['라인', 'line', '구분', '공정']):
+                line_col = col
+            elif any(k in col_str for k in ['생산수량', '생산량', '수량', 'quantity', 'qty', '실적']):
+                qty_col = col
+            elif any(k in col_str for k in ['가동률', '가동율', 'utilization', 'rate', '가동', '가동비율']):
+                util_col = col
+
+        # 2. 매핑 성공 여부에 따른 스마트 대시보드 렌더링
+        if line_col and (qty_col or util_col):
+            st.success(f"🎯 동일 라인 식별 완료 (기준 열: {line_col})")
             
-            if possible_x_axes:
-                x_axis = possible_x_axes[0]
-                df_grouped = df_dashboard.groupby(x_axis)[numeric_cols].sum()
-                st.bar_chart(df_grouped)
-            else:
-                # 특정 기준 열을 못 찾으면 숫자 데이터 전체를 그래프로 출력
-                st.line_chart(df_dashboard[numeric_cols])
+            # 동일 라인별 그룹화 연산 (수량은 '합계', 가동률은 '평균')
+            agg_rules = {}
+            if qty_col: agg_rules[qty_col] = 'sum'
+            if util_col: agg_rules[util_col] = 'mean'
+            
+            df_grouped = df_dashboard.groupby(line_col).agg(agg_rules).reset_index()
+            
+            # 📊 스탯 요약 표 출력 (한눈에 보기)
+            st.markdown("### 📑 동일 라인별 핵심 지표 요약표")
+            # 가동률 데이터 형태(0~1 소수점 형태인지, 0~100 퍼센트 형태인지 자동 감지하여 포맷팅)
+            display_format = {}
+            if qty_col: display_format[qty_col] = "{:,.0f}"
+            if util_col:
+                is_percentage = df_grouped[util_col].max() > 1.0
+                display_format[util_col] = "{:.1f}%" if is_percentage else "{:.1%}"
+                
+            st.dataframe(df_grouped.style.format(display_format), use_container_width=True)
+            
+            # 📉 시각화 영역 분할 배치 (수량과 가동률 스케일 분리)
+            st.markdown("### 📈 라인별 추이 분석 그래프")
+            chart_col1, chart_col2 = st.columns(2)
+            
+            with chart_col1:
+                if qty_col:
+                    st.markdown(f"**📦 라인별 총 생산수량 합계**")
+                    st.bar_chart(df_grouped.set_index(line_col)[[qty_col]])
+            
+            with chart_col2:
+                if util_col:
+                    st.markdown(f"**⚡ 라인별 평균 가동률 추이**")
+                    st.line_chart(df_grouped.set_index(line_col)[[util_col]])
+                    
+            with st.expander("📂 업로드 원본 데이터 전체 보기"):
+                st.dataframe(df_dashboard, use_container_width=True)
         else:
-            st.warning("엑셀/CSV 파일에 그래프로 그릴 수 있는 숫자 데이터가 부족합니다.")
+            # 매핑 실패 시 범용 폴백 모드
+            st.warning("⚠️ 엑셀 파일 내에서 '라인', '생산수량', '가동률'을 뜻하는 명확한 열 이름을 찾지 못했습니다. 일반 수치 자동 분석으로 전환합니다.")
+            with st.expander("💡 대시보드 자동 연동을 위한 권장 엑셀 열 이름 팁"):
+                st.markdown("- **라인 열 이름:** `라인` 또는 `Line` \n- **생산수량 열 이름:** `생산수량` 또는 `Quantity` \n- **가동률 열 이름:** `가동률` 또는 `Utilization`")
+            
+            numeric_cols = df_dashboard.select_dtypes(include=['float64', 'int64']).columns
+            if len(numeric_cols) > 0:
+                st.bar_chart(df_dashboard[numeric_cols])
+            st.dataframe(df_dashboard, use_container_width=True)
     else:
-        st.info("👈 좌측 업로드 창에 오늘자 생산 실적 파일(Excel 또는 CSV)을 올려주시면 대시보드가 자동으로 생성됩니다.")
+        st.info("👈 왼쪽 업로드 창에 오늘자 생산 실적 파일(Excel / CSV)을 넣어주시면 동일 라인별 가동률 정밀 분석 대시보드가 활성화됩니다.")
