@@ -260,7 +260,7 @@ with tab3:
             
             # 3. 명칭 적용
             df_display = df_grouped.rename(columns={
-                'Line': 'Line* 명',
+                'Line': '라인명',
                 'Target': '목표수량',
                 'Passed': '양품수량',
                 'Defect': '불량수량',
