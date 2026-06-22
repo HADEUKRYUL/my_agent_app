@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # 💾 1. 영구 기억 저장소 파일 경로 설정
 HISTORY_FILE = "chat_history.json"
 SCHEDULE_FILE = "schedule_history.json"
-PRODUCTION_FILE = "production_history.json"  # 매일 업로드되는 실적 데이터 누적 저장소
+PRODUCTION_FILE = "production_history.json"  # 매일 업데이트되는 실적 누적 저장소
 
 def load_json(file_path):
     if os.path.exists(file_path):
@@ -130,7 +130,7 @@ with st.sidebar:
     st.markdown("---")
     st.link_button("🎨 Canva (캔바) 바로가기", "https://www.canva.com/")
 
-# 📱 7. 상단 탭 구성 (대시보드 이름 변경 반영)
+# 📱 7. 상단 탭 구성 (실적 현황으로 명칭 통일)
 tab1, tab2, tab3 = st.tabs(["💬 비서와의 대화", "📅 일정 관리표", "📊 실적 현황"])
 
 # ==========================================
@@ -183,7 +183,7 @@ with tab1:
                         st.error(f"⚠️ 통신 에러: {e}")
 
 # ==========================================
-# 탭 2: 일정 관리표 (기존 기능 완전 유지)
+# 탭 2: 일정 관리표 (★문법 에러 완벽 정정 완료)
 # ==========================================
 with tab2:
     st.subheader("📅 주인님의 일정표")
@@ -196,7 +196,8 @@ with tab2:
             new_task = st.text_input("일정 내용")
             if st.button("일정 저장"):
                 if new_task:
-                    datetime_str = f"{new_date} {new_time.strftime('%H('%M')')}"
+                    # ◀ 이 부분의 중복 따옴표 문법 오류를 완전하게 수정했습니다.
+                    datetime_str = f"{new_date} {new_time.strftime('%H:%M')}"
                     st.session_state.schedules.append({"Task": new_task, "DateTime": datetime_str})
                     save_json(SCHEDULE_FILE, st.session_state.schedules)
                     st.success(f"✅ '{new_task}' 일정 등록 완료")
@@ -207,7 +208,7 @@ with tab2:
         st.dataframe(df_schedule.sort_values(by="DateTime").reset_index(drop=True), use_container_width=True)
 
 # ==========================================
-# 탭 3: 실적 현황 (★요청사항 전면 반영 및 고도화)
+# 탭 3: 실적 현황 (동일 라인 그룹화 및 월별 추이 모니터링)
 # ==========================================
 with tab3:
     st.subheader("📊 월별 누적 실적 현황 관리 체계")
@@ -217,26 +218,26 @@ with tab3:
         df_hist['Date'] = pd.to_datetime(df_hist['Date'])
         df_hist['Month'] = df_hist['Date'].dt.strftime('%Y-%m')
         
-        # 1. 자동 한 달 단위 분기 기능 ("한달이 지나면 다시 시작하면서")
+        # 이번 달 식별
         current_month = datetime.date.today().strftime('%Y-%m')
         
-        st.markdown(f"### 📅 당월 ({current_month}) 동일 라인별 실적 합계")
+        st.markdown(f"### 📅 당월 ({current_month}) 동일 라인별 실적 전체 합계")
         df_current = df_hist[df_hist['Month'] == current_month]
         
         if not df_current.empty:
-            # 동일 라인명으로 그룹화하여 합계 계산
+            # Line* 명 기준으로 동일 라인을 묶어 전체 합계 연산
             df_grouped = df_current.groupby('Line').agg({
                 'Target': 'sum',
                 'Passed': 'sum',
                 'Defect': 'sum'
             }).reset_index()
             
-            # 지정 수식 정밀 연산 (가동율, 이용율, PPM)
+            # 주인님이 명시하신 실적 지표 공식 적용
             df_grouped['가동율'] = df_grouped.apply(lambda r: r['Target'] / r['Passed'] if r['Passed'] > 0 else 0, axis=1)
             df_grouped['이용율'] = df_grouped.apply(lambda r: r['Passed'] / r['Target'] if r['Target'] > 0 else 0, axis=1)
             df_grouped['PPM'] = df_grouped.apply(lambda r: (r['Defect'] / r['Passed']) * 1000000 if r['Passed'] > 0 else 0, axis=1)
             
-            # 주인님께서 지정하신 명칭으로 정렬 및 변경
+            # 요구사항에 맞춘 칼럼명 매핑
             df_display = df_grouped.rename(columns={
                 'Line': 'Line* 명',
                 'Target': '목표수량',
@@ -244,7 +245,7 @@ with tab3:
                 'Defect': '불량수량'
             })
             
-            # 요약 지표 테이블 시각화
+            # 정밀 지표 데이터프레임 시각화
             st.dataframe(df_display.style.format({
                 '목표수량': '{:,.0f}',
                 '양품수량': '{:,.0f}',
@@ -254,7 +255,7 @@ with tab3:
                 'PPM': '{:,.0f} PPM'
             }), use_container_width=True)
             
-            # 그래프 모니터링 기능
+            # 그래프 모니터링
             st.markdown("### 📈 라인별 핵심 지표 모니터링")
             g_col1, g_col2 = st.columns(2)
             with g_col1:
@@ -266,7 +267,7 @@ with tab3:
         else:
             st.info("이번 달에 누적된 실적 데이터가 없습니다. 새로운 생산 실적 파일을 업로드해 주십시오.")
             
-        # 2. 장기 월별 모니터링 뷰 (과거 월 데이터 추이 추적)
+        # 달이 바뀌어도 유기적으로 연속 모니터링이 가능하게 하는 전체 누적 선그래프
         st.markdown("---")
         st.markdown("### 📉 월별 장기 누적 모니터링 추이")
         df_monthly_trend = df_hist.groupby('Month').agg({'Target': 'sum', 'Passed': 'sum', 'Defect': 'sum'}).reset_index()
