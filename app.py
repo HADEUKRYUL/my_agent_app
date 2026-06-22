@@ -49,7 +49,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("대화, 일정, 누적 실적 및 위험 라인(가동율 80%↓, 500 PPM↑) 자동 감지 시스템")
+st.caption("대화, 일정, 누적 실적 및 위험 작업장(가동율 80%↓, 500 PPM↑) 자동 감지 시스템")
 
 # 🔑 4. API 키 설정
 try:
@@ -98,11 +98,13 @@ with st.sidebar:
                 df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
                 file_content = df_upload.to_string()
                 
-                line_col, target_col, passed_col, defect_col = None, None, None, None
+                # [핵심] 작업장명 우선 매핑 엔진으로 변경
+                workplace_col, target_col, passed_col, defect_col = None, None, None, None
                 for col in df_upload.columns:
                     col_str = str(col).lower().strip()
-                    if any(k in col_str for k in ['라인', 'line', '구분', '공정', '라인명']):
-                        line_col = col
+                    if any(k in col_str for k in ['작업장', '작업장명', 'workplace', '라인', 'line', '구분', '공정']):
+                        if workplace_col is None or '작업장' in col_str: # 작업장을 최우선으로 잡음
+                            workplace_col = col
                     elif any(k in col_str for k in ['목표', 'target', '목표수량', '목표량']):
                         target_col = col
                     elif any(k in col_str for k in ['양품', 'passed', '합격', '양품수량', '합격수량']):
@@ -110,18 +112,18 @@ with st.sidebar:
                     elif any(k in col_str for k in ['불량', 'defect', '불량수량', '불량량']):
                         defect_col = col
 
-                if line_col and target_col and passed_col and defect_col:
+                if workplace_col and target_col and passed_col and defect_col:
                     today_str = datetime.date.today().strftime("%Y-%m-%d")
                     
                     for _, row in df_upload.iterrows():
-                        line_name = str(row[line_col]).strip()
-                        if line_name.lower() in ['nan', 'nat', 'null', ''] or pd.isna(row[line_col]):
+                        wp_name = str(row[workplace_col]).strip()
+                        if wp_name.lower() in ['nan', 'nat', 'null', ''] or pd.isna(row[workplace_col]):
                             continue
                             
-                        # 수량 데이터만 깔끔하게 저장 (이용율 계산 로직 삭제)
+                        # 작업장(Workplace) 단위로 데이터 저장
                         st.session_state.production_history.append({
                             "Date": today_str,
-                            "Line": line_name,
+                            "Workplace": wp_name,
                             "Target": safe_float(row[target_col]),
                             "Passed": safe_float(row[passed_col]),
                             "Defect": safe_float(row[defect_col])
@@ -129,7 +131,7 @@ with st.sidebar:
                     save_json(PRODUCTION_FILE, st.session_state.production_history)
                     st.success("✅ 오늘자 생산 실적이 [일자별 누적 데이터베이스]에 기록되었습니다!")
                 else:
-                    st.warning("⚠️ 엑셀 열 제목(라인명, 목표수량, 양품수량, 불량수량)을 확인해 주십시오.")
+                    st.warning("⚠️ 엑셀 열 제목(작업장명, 목표수량, 양품수량, 불량수량)을 확인해 주십시오.")
             
             elif uploaded_file.name.endswith('.pdf'):
                 file_content = "\n".join([p.extract_text() for p in PyPDF2.PdfReader(uploaded_file).pages])
@@ -224,7 +226,7 @@ with tab2:
         st.dataframe(df_schedule.sort_values(by="DateTime").reset_index(drop=True), use_container_width=True)
 
 # ==========================================
-# 탭 3: 실적 현황 (이용율 삭제 및 가동율 공식 반영)
+# 탭 3: 실적 현황 (작업장명 기준 집계 및 필터링)
 # ==========================================
 with tab3:
     st.subheader("📊 실적 현황 (누적 및 위험 감지 모니터링)")
@@ -232,6 +234,10 @@ with tab3:
     if st.session_state.production_history:
         df_hist = pd.DataFrame(st.session_state.production_history)
         
+        # [호환성 방어] 과거 데이터에 'Line'만 있고 'Workplace'가 없을 경우를 대비한 자동 매핑
+        if 'Workplace' not in df_hist.columns and 'Line' in df_hist.columns:
+            df_hist['Workplace'] = df_hist['Line']
+            
         for col in ['Target', 'Passed', 'Defect']:
             if col not in df_hist.columns:
                 df_hist[col] = 0.0
@@ -240,27 +246,27 @@ with tab3:
         df_hist['Month'] = df_hist['Date_dt'].dt.strftime('%Y-%m')
         
         current_month = datetime.date.today().strftime('%Y-%m')
-        st.markdown(f"### 📅 당월 ({current_month}) 라인별 실적 종합")
+        st.markdown(f"### 📅 당월 ({current_month}) 작업장별 실적 종합")
         
         df_current = df_hist[df_hist['Month'] == current_month]
         
         if not df_current.empty:
-            # 1. 수량 합산 (이용율 관련 코드 완전 삭제)
-            df_grouped = df_current.groupby('Line').agg({
+            # 1. 작업장(Workplace) 기준으로 수량 합산 
+            df_grouped = df_current.groupby('Workplace').agg({
                 'Target': 'sum',
                 'Passed': 'sum',
                 'Defect': 'sum'
             }).reset_index()
             
-            # 2. 지시하신 가동율(목표수량 / 양품수량) 공식 적용
-            df_grouped['가동율'] = df_grouped.apply(lambda r: r['Target'] / r['Passed'] if r['Passed'] > 0 else 0.0, axis=1)
+            # 2. 가동율 공식 적용 (양품수량 / 목표수량)
+            df_grouped['가동율'] = df_grouped.apply(lambda r: r['Passed'] / r['Target'] if r['Target'] > 0 else 0.0, axis=1)
             
             # 3. PPM 연산 (불량수량 / 양품수량 * 1,000,000)
             df_grouped['PPM'] = df_grouped.apply(lambda r: (r['Defect'] / r['Passed']) * 1000000 if r['Passed'] > 0 else 0.0, axis=1)
             
-            # 4. 명칭 적용
+            # 4. 화면 표시용 칼럼명 변경
             df_display = df_grouped.rename(columns={
-                'Line': '라인명',
+                'Workplace': '작업장명',
                 'Target': '목표수량',
                 'Passed': '양품수량',
                 'Defect': '불량수량'
@@ -274,25 +280,25 @@ with tab3:
                 'PPM': '{:,.0f} PPM'
             }), use_container_width=True)
             
-            # 5. 필터링 차트 (가동율 80% 이하, PPM 500 이상만 추출)
-            st.markdown("### 🚨 핵심 지표 모니터링 (위험 라인 색출)")
+            # 5. 필터링 차트 (가동율 80% 이하, PPM 500 이상 작업장만 추출)
+            st.markdown("### 🚨 핵심 지표 모니터링 (위험 작업장 색출)")
             g_col1, g_col2 = st.columns(2)
             
             with g_col1:
-                st.markdown("**📉 가동율 80% 이하 라인**")
+                st.markdown("**📉 가동율 80% 이하 작업장**")
                 df_under_80 = df_display[df_display['가동율'] <= 0.8]
                 if not df_under_80.empty:
-                    st.bar_chart(df_under_80.set_index('라인명')[['가동율']])
+                    st.bar_chart(df_under_80.set_index('작업장명')[['가동율']])
                 else:
-                    st.success("전체 라인 가동율 양호 (80% 초과)")
+                    st.success("전체 작업장 가동율 양호 (80% 초과)")
                     
             with g_col2:
-                st.markdown("**🔥 PPM** (500 PPM 이상 불량 라인)")
+                st.markdown("**🔥 PPM** (500 PPM 이상 불량 작업장)")
                 df_over_500 = df_display[df_display['PPM'] >= 500]
                 if not df_over_500.empty:
-                    st.bar_chart(df_over_500.set_index('라인명')[['PPM']])
+                    st.bar_chart(df_over_500.set_index('작업장명')[['PPM']])
                 else:
-                    st.success("전체 라인 불량 상태 양호 (500 PPM 미만)")
+                    st.success("전체 작업장 불량 상태 양호 (500 PPM 미만)")
         else:
             st.info("이번 달 실적 데이터가 아직 업로드되지 않았습니다.")
             
