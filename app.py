@@ -31,7 +31,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("대화, 일정 관리, 그리고 동일 라인별 수량·가동률 정밀 분석 대시보드로 보좌합니다.")
+st.caption("대화, 일정 관리, 그리고 실적·품질 지표(가동률/불량PPM) 자동 연산 대시보드로 보좌합니다.")
 
 # 🔑 4. API 키 설정
 try:
@@ -76,14 +76,14 @@ with st.sidebar:
                 st.image(uploaded_file, caption="분석 대기 중인 사진")
                 st.success("✅ 사진 인식 완료!")
             
-            # 생산 실적 데이터 처리 (대시보드 확장)
+            # 생산 실적 데이터 처리
             elif uploaded_file.name.endswith('.csv') or uploaded_file.name.endswith('.xlsx'):
                 if uploaded_file.name.endswith('.csv'):
                     df_dashboard = pd.read_csv(uploaded_file)
                 else:
                     df_dashboard = pd.read_excel(uploaded_file)
                 file_content = df_dashboard.to_string()
-                st.success("✅ 생산 실적 데이터 분석 성공! 상단의 [📊 생산 실적 대시보드] 탭을 확인하십시오.")
+                st.success("✅ 생산 실적 데이터 요약 성공! [📊 생산 실적 대시보드] 탭을 확인하십시오.")
             
             # 일반 문서 처리
             elif uploaded_file.name.endswith('.pdf'):
@@ -190,70 +190,86 @@ with tab2:
         st.info("현재 등록된 일정이 없습니다.")
 
 # ==========================================
-# 탭 3: 생산 실적 대시보드 (수량 및 가동률 정밀 고도화)
+# 탭 3: 생산 실적 대시보드 (수량 및 가동률/PPM 연산 강화)
 # ==========================================
 with tab3:
     st.subheader("📊 라인별 실적 정밀 대시보드")
     
     if df_dashboard is not None:
-        # 1. 엑셀 파일 내 주요 키워드 자동 매핑 엔진
-        line_col, qty_col, util_col = None, None, None
+        # 1. 스마트 열 매핑 엔진 (주인님의 요구사항 반영)
+        line_col, target_col, passed_col, defect_col = None, None, None, None
         for col in df_dashboard.columns:
             col_str = str(col).lower().strip()
-            if any(k in col_str for k in ['라인', 'line', '구분', '공정']):
+            if any(k in col_str for k in ['라인', 'line', '구분', '공정', '라인명']):
                 line_col = col
-            elif any(k in col_str for k in ['생산수량', '생산량', '수량', 'quantity', 'qty', '실적']):
-                qty_col = col
-            elif any(k in col_str for k in ['가동률', '가동율', 'utilization', 'rate', '가동', '가동비율']):
-                util_col = col
+            elif any(k in col_str for k in ['목표', 'target', '목표수량', '목표량']):
+                target_col = col
+            elif any(k in col_str for k in ['합격', 'passed', '합격수량', '양품', '합격량', '정상수량']):
+                passed_col = col
+            elif any(k in col_str for k in ['불량', 'defect', '불량수량', '불량량']):
+                defect_col = col
 
-        # 2. 매핑 성공 여부에 따른 스마트 대시보드 렌더링
-        if line_col and (qty_col or util_col):
-            st.success(f"🎯 동일 라인 식별 완료 (기준 열: {line_col})")
+        # 2. 필수 열 매핑 성공 시 계산 수행
+        if line_col and target_col and passed_col and defect_col:
+            st.success("🎯 엑셀 항목 매핑 완료 (라인명, 목표수량, 합격수량, 불량수량 자동 인지)")
             
-            # 동일 라인별 그룹화 연산 (수량은 '합계', 가동률은 '평균')
-            agg_rules = {}
-            if qty_col: agg_rules[qty_col] = 'sum'
-            if util_col: agg_rules[util_col] = 'mean'
+            # 동일 라인별 수량 데이터 선합산
+            df_grouped = df_dashboard.groupby(line_col).agg({
+                target_col: 'sum',
+                passed_col: 'sum',
+                defect_col: 'sum'
+            }).reset_index()
             
-            df_grouped = df_dashboard.groupby(line_col).agg(agg_rules).reset_index()
+            # 주인님께서 지정하신 수식 적용 연산 (분모 0 예방 처리 포함)
+            # 가동률 = 목표수량 / 합격수량
+            df_grouped['가동률'] = df_grouped.apply(
+                lambda row: row[target_col] / row[passed_col] if row[passed_col] > 0 else 0, axis=1
+            )
+            # 불량PPM = (불량수량 / 합격수량) * 1000000
+            df_grouped['불량PPM'] = df_grouped.apply(
+                lambda row: (row[defect_col] / row[passed_col]) * 1000000 if row[passed_col] > 0 else 0, axis=1
+            )
             
-            # 📊 스탯 요약 표 출력 (한눈에 보기)
-            st.markdown("### 📑 동일 라인별 핵심 지표 요약표")
-            # 가동률 데이터 형태(0~1 소수점 형태인지, 0~100 퍼센트 형태인지 자동 감지하여 포맷팅)
-            display_format = {}
-            if qty_col: display_format[qty_col] = "{:,.0f}"
-            if util_col:
-                is_percentage = df_grouped[util_col].max() > 1.0
-                display_format[util_col] = "{:.1f}%" if is_percentage else "{:.1%}"
+            # 한글 칼럼 명칭 통일 및 정렬
+            df_display = df_grouped.rename(columns={
+                line_col: '라인명',
+                target_col: '목표수량',
+                passed_col: '합격수량',
+                defect_col: '불량수량'
+            })
+            
+            # 📑 요약 레포트 출력
+            st.markdown("### 📑 라인별 실적 분석 보고서")
+            st.dataframe(df_display.style.format({
+                '목표수량': '{:,.0f}',
+                '합격수량': '{:,.0f}',
+                '불량수량': '{:,.0f}',
+                '가동률': '{:.1%}',
+                '불량PPM': '{:,.0f} PPM'
+            }), use_container_width=True)
+            
+            # 📈 대형 시각화 그래프 배치
+            st.markdown("### 📈 항목별 지표 트렌드")
+            g_col1, g_col2, g_col3 = st.columns(3)
+            
+            with g_col1:
+                st.markdown("**📦 수량 종합 비교 (목표 vs 합격 vs 불량)**")
+                st.bar_chart(df_display.set_index('라인명')[['목표수량', '합격수량', '불량수량']])
+            
+            with g_col2:
+                st.markdown("**⚡ 라인별 가동률 (목표 / 합격)**")
+                st.line_chart(df_display.set_index('라인명')[['가동률']])
                 
-            st.dataframe(df_grouped.style.format(display_format), use_container_width=True)
-            
-            # 📉 시각화 영역 분할 배치 (수량과 가동률 스케일 분리)
-            st.markdown("### 📈 라인별 추이 분석 그래프")
-            chart_col1, chart_col2 = st.columns(2)
-            
-            with chart_col1:
-                if qty_col:
-                    st.markdown(f"**📦 라인별 총 생산수량 합계**")
-                    st.bar_chart(df_grouped.set_index(line_col)[[qty_col]])
-            
-            with chart_col2:
-                if util_col:
-                    st.markdown(f"**⚡ 라인별 평균 가동률 추이**")
-                    st.line_chart(df_grouped.set_index(line_col)[[util_col]])
-                    
-            with st.expander("📂 업로드 원본 데이터 전체 보기"):
+            with g_col3:
+                st.markdown("**🚨 라인별 불량 지수 (PPM)**")
+                st.bar_chart(df_display.set_index('라인명')[['불량PPM']])
+                
+            with st.expander("📂 업로드 원본 데이터 보기"):
                 st.dataframe(df_dashboard, use_container_width=True)
         else:
-            # 매핑 실패 시 범용 폴백 모드
-            st.warning("⚠️ 엑셀 파일 내에서 '라인', '생산수량', '가동률'을 뜻하는 명확한 열 이름을 찾지 못했습니다. 일반 수치 자동 분석으로 전환합니다.")
-            with st.expander("💡 대시보드 자동 연동을 위한 권장 엑셀 열 이름 팁"):
-                st.markdown("- **라인 열 이름:** `라인` 또는 `Line` \n- **생산수량 열 이름:** `생산수량` 또는 `Quantity` \n- **가동률 열 이름:** `가동률` 또는 `Utilization`")
-            
-            numeric_cols = df_dashboard.select_dtypes(include=['float64', 'int64']).columns
-            if len(numeric_cols) > 0:
-                st.bar_chart(df_dashboard[numeric_cols])
+            st.warning("⚠️ 엑셀 파일 내에서 필요한 항목(라인명, 목표수량, 합격수량, 불량수량)의 열 이름을 완벽히 찾지 못했습니다.")
+            with st.expander("💡 팁: 엑셀 파일 상단의 열 제목을 다음과 유사하게 맞춰주시면 자동 계산됩니다."):
+                st.markdown("- **라인명:** `라인명`, `라인` 또는 `Line` \n- **목표수량:** `목표수량`, `목표` 또는 `Target` \n- **합격수량:** `합격수량`, `합격` 또는 `Passed` \n- **불량수량:** `불량수량`, `불량` 또는 `Defect`")
             st.dataframe(df_dashboard, use_container_width=True)
     else:
-        st.info("👈 왼쪽 업로드 창에 오늘자 생산 실적 파일(Excel / CSV)을 넣어주시면 동일 라인별 가동률 정밀 분석 대시보드가 활성화됩니다.")
+        st.info("👈 왼쪽 파일 업로드 창에 목표 및 합격/불량 수량이 기록된 실적 엑셀 파일을 업로드해 주십시오.")
