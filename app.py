@@ -55,7 +55,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 인프라 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("멀티 채팅 세션, 실적 현황, 업무 매뉴얼 챗봇 및 코어워크-Canva 리포트 솔루션 통합 플랫폼")
+st.caption("멀티 채팅 세션, 실적 현황, 다국어 업무 매뉴얼 챗봇 및 코어워크-Canva 리포트 솔루션 통합 플랫폼")
 
 # 🔑 4. API 키 검증 및 세팅
 try:
@@ -100,10 +100,9 @@ with st.sidebar:
         save_json(HISTORY_FILE, st.session_state.chats)
         st.rerun()
 
-    # 🔍 채팅 키워 검색 엔진
+    # 🔍 채팅 키워드 검색 엔진
     search_query = st.text_input("🔍 기존 대화 검색 (내용/제목)", "").strip()
     
-    # 검색어 매칭 필터링 로직
     valid_sessions = []
     for sess in st.session_state.chats["sessions"]:
         if not search_query:
@@ -198,12 +197,11 @@ with st.sidebar:
     st.markdown("---")
     st.link_button("🎨 Canva 스튜디오 직행", "https://www.canva.com/", use_container_width=True)
 
-# 📱 7. 기능 분할 탭 마스터 구조 구현 (코어워크 및 Canva 통합 반영)
+# 📱 7. 기능 분할 탭 마스터 구조 구현
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "💬 비서와의 대화", "📅 일정 관리표", "📊 실적 현황", "📚 업무 매뉴얼 챗봇", "💼 코어워크 & Canva"
 ])
 
-# 현재 선택된 세션 딕셔너리 추출 구조
 current_session = next(s for s in st.session_state.chats["sessions"] if s["id"] == st.session_state.chats["current_id"])
 
 # ==========================================
@@ -212,7 +210,6 @@ current_session = next(s for s in st.session_state.chats["sessions"] if s["id"] 
 with tab1:
     st.subheader(f"💬 현재 대화방: {current_session['title']}")
     
-    # 대화방 타이틀 수정 폼
     with st.expander("📝 대화방 이름 변경"):
         new_title = st.text_input("새 대화방 이름 입력", current_session["title"])
         if st.button("이름 저장"):
@@ -220,7 +217,6 @@ with tab1:
             save_json(HISTORY_FILE, st.session_state.chats)
             st.rerun()
 
-    # 과거 메시지 스트리밍 출력
     for msg in current_session["messages"]:
         if msg["role"] != "system":
             with st.chat_message(msg["role"]):
@@ -270,7 +266,7 @@ with tab1:
                         st.error(f"⚠️ OpenAI API 통신 장애: {e}")
 
 # ==========================================
-# 탭 2: 일정 관리표 (기존 기능 완벽 보존)
+# 탭 2: 일정 관리표
 # ==========================================
 with tab2:
     st.subheader("📅 주인님의 스케줄 관리 기구")
@@ -294,7 +290,7 @@ with tab2:
         st.dataframe(df_schedule.sort_values(by="DateTime").reset_index(drop=True), use_container_width=True)
 
 # ==========================================
-# 탭 3: 실적 현황 (양품/목표 가동율, 위험 필터링, 일자별 완벽 보존)
+# 탭 3: 실적 현황
 # ==========================================
 with tab3:
     st.subheader("📊 실적 현황 (작업장 단위 고도화)")
@@ -312,9 +308,7 @@ with tab3:
         df_current = df_hist[df_hist['Month'] == current_month]
         if not df_current.empty:
             df_grouped = df_current.groupby('Workplace').agg({'Target': 'sum', 'Passed': 'sum', 'Defect': 'sum'}).reset_index()
-            # 💡 공식 교정: 가동율 = 양품수량 / 목표수량
             df_grouped['가동율'] = df_grouped.apply(lambda r: r['Passed'] / r['Target'] if r['Target'] > 0 else 0.0, axis=1)
-            # 💡 공식 보존: PPM = 불량수량 / 양품수량 * 1,000,000
             df_grouped['PPM'] = df_grouped.apply(lambda r: (r['Defect'] / r['Passed']) * 1000000 if r['Passed'] > 0 else 0.0, axis=1)
             
             df_display = df_grouped.rename(columns={'Workplace': '작업장명', 'Target': '목표수량', 'Passed': '양품수량', 'Defect': '불량수량'})
@@ -349,10 +343,10 @@ with tab3:
         st.info("업로드된 실적 데이터가 존재하지 않습니다.")
 
 # ==========================================
-# 탭 4: 📚 업무 매뉴얼 챗봇 (기존 기능 완벽 보존)
+# 탭 4: 📚 업무 매뉴얼 챗봇 (★베트남어 전문 번역 인격 탑재★)
 # ==========================================
 with tab4:
-    st.subheader("📚 현장 업무 매뉴얼 전용 챗봇")
+    st.subheader("📚 현장 업무 매뉴얼 전용 챗봇 (베트남어 자동 번역 지원)")
     with st.expander("🛠️ 매뉴얼 영구 학습 세션 구축"):
         manual_file = st.file_uploader("학습용 문서 주입 (PDF, TXT, PPTX)", type=["pdf", "txt", "pptx"], key="manual_tab_uploader")
         if st.button("🧠 비서 인공지능 뇌 훈련 실행"):
@@ -383,18 +377,26 @@ with tab4:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    if m_prompt := st.chat_input("매뉴얼 관련 정밀 질의 사항 입력...", key="manual_chat_input"):
+    if m_prompt := st.chat_input("매뉴얼 관련 질문 또는 '이 내용을 베트남어로 번역해줘' 입력...", key="manual_chat_input"):
         st.session_state.manual_chat.append({"role": "user", "content": m_prompt})
         with st.chat_message("user"):
             st.markdown(m_prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("매뉴얼 데이터베이스 스캔 중..."):
+            with st.spinner("매뉴얼 데이터베이스 스캔 및 번역 중..."):
                 all_context = "\n\n--- 참조 매뉴얼 원본 데이터 ---\n"
                 for doc in st.session_state.manual_knowledge:
                     all_context += f"\n[문서: {doc['title']}]\n{doc['content']}\n"
                 
-                m_instruction = "당신은 완벽한 업무 매뉴얼 전문가입니다. 반드시 주어진 참조 매뉴얼 내용에만 근거하여 팩트 기반으로 답변하세요." + all_context
+                # 💡 핵심 수정: 매뉴얼 전문가이자 '베트남어 번역가' 인격을 강하게 부여
+                m_instruction = (
+                    "당신은 제조 현장의 완벽한 업무 매뉴얼 전문가이자 전문 베트남어 번역가입니다. "
+                    "기본적인 질문에 대한 답변은 반드시 주어진 참조 매뉴얼 내용에만 근거하여 팩트 기반으로 작성하세요. "
+                    "단, 사용자가 특정 내용이나 매뉴얼 규정을 '베트남어로 번역'해달라고 요청하는 경우, "
+                    "매뉴얼의 내용을 벗어난 추측이라 판단하지 말고, 즉시 현지 베트남 작업자가 완벽히 이해할 수 있는 "
+                    "가장 자연스럽고 정확한 베트남어로 번역해서 출력해 주십시오."
+                ) + all_context
+                
                 api_m = [{"role": "system", "content": m_instruction}] + st.session_state.manual_chat[:-1] + [{"role": "user", "content": m_prompt}]
                 
                 try:
@@ -426,7 +428,7 @@ with tab5:
         st.markdown("### 🎨 Canva 파워포인트/보고서 템플릿 맞춤형 텍스트 설계 가이드")
         st.info("원하시는 보고서 주제나 대시보드 데이터를 기반으로 Canva 레이아웃 박스에 최적화된 블록형 초안을 빌드합니다.")
         
-        report_topic = st.text_input("보고서 주제 입력 (예: 6월 가동율 저하 작업장 원인 분석 및 대책 보고)", "생산성 및 품질 지표 종합 분석 보고서")
+        report_topic = st.text_input("보고서 주제 입력 (예: 당월 가동율 및 PPM 종합 분석 보고서)", "생산성 및 품질 지표 종합 분석 보고서")
         report_data_source = st.checkbox("현재 당월 누적 실적 데이터를 보고서에 자동 반영", value=True)
         
         if st.button("🚀 Canva 맞춤형 고급 초안 생성"):
