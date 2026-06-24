@@ -17,7 +17,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 HISTORY_FILE = "chat_history.json"
 SCHEDULE_FILE = "schedule_history.json"
 PRODUCTION_FILE = "production_history.json"
-MANUAL_KNOWLEDGE_FILE = "manual_knowledge.json" # 매뉴얼 영구 보존 DB
+MANUAL_KNOWLEDGE_FILE = "manual_knowledge.json" 
 MANUAL_CHAT_FILE = "manual_chat_history.json"
 
 def load_json(file_path, default_type=dict):
@@ -57,7 +57,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 인프라 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("실적 현황, 매뉴얼 자가학습(Q&A) 진화, AI 자동 PPT 생성 및 다국어 지원 플랫폼")
+st.caption("생산실적현황, 매뉴얼 자가학습, 데이터 분석 센터 및 AI PPT 생성 솔루션 통합 플랫폼")
 
 # 🔑 4. API 키 검증 및 세팅
 try:
@@ -85,6 +85,8 @@ if "manual_knowledge" not in st.session_state:
     st.session_state.manual_knowledge = load_json(MANUAL_KNOWLEDGE_FILE, default_type=list)
 if "manual_chat" not in st.session_state:
     st.session_state.manual_chat = load_json(MANUAL_CHAT_FILE, default_type=list)
+if "data_chat" not in st.session_state:
+    st.session_state.data_chat = []
 
 # 📁 6. 왼쪽 사이드바 구성 (멀티 채팅방 생성, 검색 및 데이터 업로드)
 with st.sidebar:
@@ -130,9 +132,9 @@ with st.sidebar:
         st.caption("❌ 검색 조건에 부합하는 대화방이 없습니다.")
 
     st.markdown("---")
-    st.header("📁 데이터 및 실적 업로드")
+    st.header("📁 일일 누적용 데이터 업로드")
     
-    uploaded_file = st.file_uploader("문서, 사진, 생산실적(Excel/CSV) 업로드", type=["pdf", "csv", "xlsx", "txt", "pptx", "png", "jpg", "jpeg"])
+    uploaded_file = st.file_uploader("생산실적 누적용(Excel/CSV), 사진, 문서", type=["pdf", "csv", "xlsx", "txt", "pptx", "png", "jpg", "jpeg"])
     
     file_content = None
     image_data = None
@@ -197,9 +199,14 @@ with st.sidebar:
     st.markdown("---")
     st.link_button("🎨 Canva 스튜디오 직행", "https://www.canva.com/", use_container_width=True)
 
-# 📱 7. 기능 분할 탭 마스터 구조 구현
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "💬 비서와의 대화", "📅 일정 관리표", "📊 실적 현황", "📚 업무 매뉴얼 챗봇 (자가진화)", "💼 코어워크 & 리포트"
+# 📱 7. 기능 분할 탭 마스터 구조 구현 (총 6개 탭)
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "💬 비서와의 대화", 
+    "📅 일정 관리표", 
+    "📊 생산실적현황", 
+    "📚 업무 매뉴얼 챗봇 (자가진화)", 
+    "💼 코어워크 & 리포트",
+    "📈 데이터 분석 센터"
 ])
 
 current_session = next(s for s in st.session_state.chats["sessions"] if s["id"] == st.session_state.chats["current_id"])
@@ -290,10 +297,10 @@ with tab2:
         st.dataframe(df_schedule.sort_values(by="DateTime").reset_index(drop=True), use_container_width=True)
 
 # ==========================================
-# 탭 3: 실적 현황
+# 탭 3: 생산실적현황 (명칭 변경)
 # ==========================================
 with tab3:
-    st.subheader("📊 실적 현황 (작업장 단위 고도화)")
+    st.subheader("📊 생산실적현황 (작업장 단위 고도화)")
     if st.session_state.production_history:
         df_hist = pd.DataFrame(st.session_state.production_history)
         if 'Workplace' not in df_hist.columns and 'Line' in df_hist.columns:
@@ -343,12 +350,11 @@ with tab3:
         st.info("업로드된 실적 데이터가 존재하지 않습니다.")
 
 # ==========================================
-# 탭 4: 📚 업무 매뉴얼 챗봇 (개별 삭제 및 자가 학습 진화 기능 추가)
+# 탭 4: 📚 업무 매뉴얼 챗봇 (개별 삭제 및 자가 학습 진화 기능)
 # ==========================================
 with tab4:
     st.subheader("📚 현장 업무 매뉴얼 전용 챗봇 (능동형 자가 학습)")
     
-    # 지식 영구 보존 및 개별 삭제 구역
     with st.expander("🛠️ 매뉴얼 지식베이스 관리 (추가 및 삭제)", expanded=False):
         manual_file = st.file_uploader("학습용 문서 주입 (PDF, TXT, PPTX)", type=["pdf", "txt", "pptx"], key="manual_tab_uploader")
         if st.button("🧠 신규 문서 인공지능 뇌 훈련 실행"):
@@ -378,7 +384,6 @@ with tab4:
                 with col_doc_name:
                     st.markdown(f"📄 **{doc['title']}**")
                 with col_doc_del:
-                    # 삭제 기능 추가
                     if st.button("🗑️ 삭제", key=f"del_man_{i}"):
                         st.session_state.manual_knowledge.pop(i)
                         save_json(MANUAL_KNOWLEDGE_FILE, st.session_state.manual_knowledge)
@@ -420,13 +425,10 @@ with tab4:
                     st.session_state.manual_chat.append({"role": "assistant", "content": reply})
                     save_json(MANUAL_CHAT_FILE, st.session_state.manual_chat)
                     
-                    # 💡 자가 학습(Self-Learning) 로직 자동 실행: 질문과 훌륭한 답변을 스스로 영구 저장
                     auto_learn_memory = f"\n[현장 실무 Q&A 자가학습 기록]\n질문: {m_prompt}\n비서 모범답안: {reply}\n"
-                    
                     auto_doc = next((d for d in st.session_state.manual_knowledge if d['title'] == '🧠_비서_자가학습_데이터'), None)
                     if auto_doc:
                         auto_doc['content'] += auto_learn_memory
-                        # 용량 최적화 (가장 오래된 기억 삭제하여 약 4만자 유지)
                         if len(auto_doc['content']) > 40000:
                             auto_doc['content'] = auto_doc['content'][-40000:]
                     else:
@@ -440,22 +442,20 @@ with tab4:
                     st.error(f"⚠️ 매뉴얼 엔진 에러: {e}")
 
 # ==========================================
-# 탭 5: 💼 코어워크 & 리포트
+# 탭 5: 💼 코어워크 & 리포트 (삭제 요청 반영)
 # ==========================================
 with tab5:
     st.subheader("💼 생산 엔지니어링 코어워크 및 리포트 자동화")
     st.caption("제조 현장의 핵심 업무를 조율하고 완벽한 보고서 및 발표 자료를 제작합니다.")
     
+    # 지시하신 대로 기계 점검과 근무 교대 인계 메뉴를 삭제했습니다.
     core_menu = st.radio("실행할 코어워크 메뉴를 선택하십시오.", [
         "📊 AI 자동 발표 슬라이드 생성 (텍스트+이미지+PPT 다운로드)", 
-        "🎨 Canva 연동형 고품질 보고서 초안 생성기",
-        "📋 핵심 기계 장치(열처리/컴프레서) 안전 점검",
-        "✍️ 일일 근무 교대(Shift) 인계 보고서 작성"
+        "🎨 Canva 연동형 고품질 보고서 초안 생성기"
     ], horizontal=True)
     
     st.markdown("---")
     
-    # 1) AI 자동 PPT 생성 메뉴
     if core_menu == "📊 AI 자동 발표 슬라이드 생성 (텍스트+이미지+PPT 다운로드)":
         st.markdown("### 📊 AI 원터치 파워포인트 생성기")
         st.info("비서가 입력하신 주제에 맞춰 스스로 발표 문구를 기획하고, 어울리는 일러스트를 그려서 즉시 제출 가능한 PPT 파일(.pptx)로 조립합니다.")
@@ -465,7 +465,6 @@ with tab5:
         if st.button("🚀 PPT 슬라이드 자동 기획 및 생성 시작", use_container_width=True):
             with st.spinner("비서가 슬라이드에 들어갈 논리적인 문구와 디자인 프롬프트를 기획하고 있습니다..."):
                 try:
-                    # 1. 텍스트 및 이미지 프롬프트 기획 (JSON 응답 강제)
                     prompt = f"다음 주제에 대한 2장짜리 프레젠테이션 슬라이드 내용을 작성해. 주제: {ppt_topic}\n" \
                              f"형식은 반드시 아래의 JSON 포맷으로 대답해야 해.\n" \
                              f'{{"slide1_title": "메인 제목", "slide1_subtitle": "부제목", "slide2_title": "본문 제목", "slide2_content": "본문 핵심 요약(글머리기호 3~4개)", "slide2_image_prompt": "본문 내용에 어울리는 고품질 일러스트를 DALL-E가 그릴 수 있도록 상세한 영문 프롬프트 작성"}}'
@@ -478,7 +477,6 @@ with tab5:
                     )
                     ppt_data = json.loads(res.choices[0].message.content)
 
-                    # 2. 이미지 생성 및 다운로드
                     st.info("🎨 기획된 문구에 어울리는 맞춤형 삽화를 캔버스에 그리고 있습니다...")
                     img_res = client.images.generate(model="dall-e-3", prompt=ppt_data["slide2_image_prompt"], size="1024x1024")
                     image_url = img_res.data[0].url
@@ -487,16 +485,13 @@ with tab5:
                     with urllib.request.urlopen(req) as response:
                         img_bytes = response.read()
 
-                    # 3. PPTX 조립
                     st.info("📊 텍스트와 그림을 파워포인트 파일로 조립하고 있습니다...")
                     prs = Presentation()
 
-                    # 슬라이드 1 (제목)
                     slide1 = prs.slides.add_slide(prs.slide_layouts[0])
                     slide1.shapes.title.text = ppt_data.get("slide1_title", "제목")
                     slide1.placeholders[1].text = ppt_data.get("slide1_subtitle", "부제목")
 
-                    # 슬라이드 2 (본문 + 이미지)
                     slide2 = prs.slides.add_slide(prs.slide_layouts[5])
                     slide2.shapes.title.text = ppt_data.get("slide2_title", "본문 제목")
 
@@ -512,7 +507,6 @@ with tab5:
                     prs.save(ppt_stream)
                     ppt_stream.seek(0)
 
-                    # 다운로드 버튼 및 미리보기 제공
                     st.success("✨ 파워포인트 파일 조립을 완벽하게 마쳤습니다! 아래 버튼을 눌러 다운로드하십시오.")
                     st.download_button(
                         label="📥 완성된 PPT 파일 다운로드 (.pptx)",
@@ -529,7 +523,6 @@ with tab5:
                 except Exception as e:
                     st.error(f"⚠️ PPT 자동 생성 중 에러가 발생했습니다: {e}")
 
-    # 2) Canva 활용 보고서 자동 생성 메뉴
     elif core_menu == "🎨 Canva 연동형 고품질 보고서 초안 생성기":
         st.markdown("### 🎨 Canva 파워포인트/보고서 템플릿 맞춤형 텍스트 설계 가이드")
         st.info("원하시는 보고서 주제나 대시보드 데이터를 기반으로 Canva 레이아웃 박스에 최적화된 블록형 초안을 빌드합니다.")
@@ -561,22 +554,55 @@ with tab5:
                 except Exception as e:
                     st.error(f"⚠️ 보고서 빌더 통신 에러: {e}")
 
-    # 3) 핵심 기계 장치 안전 점검 코어워크 메뉴
-    elif core_menu == "📋 핵심 기계 장치(열처리/컴프레서) 안전 점검":
-        st.markdown("### 📋 현장 핵심 설비 체크리스트 운영")
-        st.checkbox("1. 열처리 공정로 내부 압력 및 히터 인입 전류 측정 (정상)")
-        st.checkbox("2. 메인 컴프레서 오일 레벨 및 토출 온도 점검 (정상)")
-        st.checkbox("3. 자동화 가공 라인 기어 로봇 암 오정렬(Defect) 시각 감지 테스트")
-        if st.button("점검 완료 로그 기록 및 비서에게 보고"):
-            st.toast("✅ 설비 체크리스트가 마스터 로그에 정상 인계되었습니다.")
+# ==========================================
+# 탭 6: 📈 데이터 분석 센터 (신규 탭 추가)
+# ==========================================
+with tab6:
+    st.subheader("📈 자유 데이터 분석 센터")
+    st.caption("필요하신 엑셀/CSV 데이터를 투입하고, 비서에게 맞춤형 분석을 지시하십시오.")
+    
+    analysis_file = st.file_uploader("분석용 개별 데이터 파일 업로드 (Excel/CSV)", type=["csv", "xlsx"], key="analysis_uploader")
+    
+    if analysis_file:
+        try:
+            if analysis_file.name.endswith('.csv'):
+                df_analysis = pd.read_csv(analysis_file)
+            else:
+                df_analysis = pd.read_excel(analysis_file)
+            
+            st.success(f"✅ '{analysis_file.name}' 데이터 리딩을 마쳤습니다. (총 {len(df_analysis)}행 데이터 확인)")
+            with st.expander("👀 원본 데이터 미리보기 (상위 10행)"):
+                st.dataframe(df_analysis.head(10))
+            
+            for msg in st.session_state.data_chat:
+                if msg["role"] != "system":
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
 
-    # 4) 근무 교대 인계 보고서 코어워크 메뉴
-    elif core_menu == "✍️ 일일 근무 교대(Shift) 인계 보고서 작성":
-        st.markdown("### ✍️ Shift Handovers 공정 인계서 자동 포맷터")
-        current_shift = st.selectbox("현재 근무조 선택", ["주간조 (Day Shift)", "야간조 (Night Shift)"])
-        issues = st.text_area("인계 및 특이 전달사항 명시 (예: A작업장 설비 씰 교체로 가동율 일시 하락)", "특이사항 없음. 정상 생산 진행 완료.")
-        
-        if st.button("인계 양식 자동 빌딩"):
-            formatted_handover = f"【근무 인계 보고서】\n- 일시: {datetime.date.today().strftime('%Y-%m-%d')}\n- 담당 근무조: {current_shift}\n- 공정 핵심 이슈: {issues}\n- 품질 가동 지표: 상단 대시보드 연동 완료."
-            st.code(formatted_handover, language="text")
-            st.success("위 포맷을 복사하여 내부 메신저나 보고 채널에 업로드하십시오.")
+            if a_prompt := st.chat_input("질문하십시오 (예: 불량률이 가장 높은 라인은?, 3월 매출 총합계는?)", key="data_chat_input"):
+                st.session_state.data_chat.append({"role": "user", "content": a_prompt})
+                with st.chat_message("user"):
+                    st.markdown(a_prompt)
+
+                with st.chat_message("assistant"):
+                    with st.spinner("비서가 엑셀 데이터의 패턴을 정밀 분석하고 있습니다..."):
+                        # 데이터 용량 조절 (초과 방지)
+                        data_str = df_analysis.to_string()
+                        if len(data_str) > 25000:
+                            data_str = f"데이터가 너무 커서 통계 요약 및 상위 100행만 제공합니다.\n\n[데이터 통계 요약]\n{df_analysis.describe().to_string()}\n\n[상위 100행]\n{df_analysis.head(100).to_string()}"
+                        
+                        sys_prompt = "당신은 최고 수준의 데이터 분석가입니다. 제공된 엑셀 데이터 테이블을 바탕으로 주인의 질문에 가장 정확하고 통찰력 있는 통계/분석 답변을 대령하십시오."
+                        api_msg = [{"role": "system", "content": sys_prompt}] + st.session_state.data_chat[:-1] + [{"role": "user", "content": f"{a_prompt}\n\n[업로드된 분석용 데이터]\n{data_str}"}]
+                        
+                        try:
+                            res = client.chat.completions.create(model="gpt-4o", messages=api_msg, temperature=0.2)
+                            reply = res.choices[0].message.content
+                            st.markdown(reply)
+                            st.session_state.data_chat.append({"role": "assistant", "content": reply})
+                        except Exception as e:
+                            st.error(f"⚠️ 분석 중 에러가 발생했습니다: {e}")
+
+        except Exception as e:
+            st.error(f"⚠️ 파일을 읽는 중 에러가 발생했습니다: {e}")
+    else:
+        st.info("여기에 전용 분석 엑셀이나 CSV 파일을 올려주시면 분석 모드가 활성화됩니다.")
