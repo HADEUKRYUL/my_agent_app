@@ -100,7 +100,7 @@ with st.sidebar:
         save_json(HISTORY_FILE, st.session_state.chats)
         st.rerun()
 
-    # 🔍 채팅 키워드 검색 엔진
+    # 🔍 채팅 키워 검색 엔진
     search_query = st.text_input("🔍 기존 대화 검색 (내용/제목)", "").strip()
     
     # 검색어 매칭 필터링 로직
@@ -183,13 +183,11 @@ with st.sidebar:
                     st.warning("⚠️ 열 제목(작업장명, 목표수량, 양품수량, 불량수량)을 확인하십시오.")
             
             elif uploaded_file.name.endswith('.pdf'):
-                file_content = "
-".join([p.extract_text() for p in PyPDF2.PdfReader(uploaded_file).pages])
+                file_content = "\n".join([p.extract_text() for p in PyPDF2.PdfReader(uploaded_file).pages])
                 st.success("✅ PDF 학습 성공!")
             elif uploaded_file.name.endswith('.pptx'):
                 prs = Presentation(uploaded_file)
-                file_content = "
-".join([shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text")])
+                file_content = "\n".join([shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text")])
                 st.success("✅ PPTX 학습 성공!")
             else:
                 file_content = uploaded_file.read().decode("utf-8")
@@ -409,7 +407,7 @@ with tab4:
                     st.error(f"⚠️ 매뉴얼 엔진 에러: {e}")
 
 # ==========================================
-# 탭 5: 💼 코어워크 & Canva 보고서 (★요청 반영 신설)
+# 탭 5: 💼 코어워크 & Canva 보고서
 # ==========================================
 with tab5:
     st.subheader("💼 생산 엔지니어링 코어워크 및 Canva 자동화")
