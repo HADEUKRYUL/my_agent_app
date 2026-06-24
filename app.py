@@ -3,11 +3,14 @@ from openai import OpenAI
 import PyPDF2
 import pandas as pd
 from pptx import Presentation
+from pptx.util import Inches
 import base64
 import json
 import os
 import datetime
 import math
+import urllib.request
+from io import BytesIO
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # 💾 1. 영구 기억 저장소 파일 경로 및 데이터 구조 정의
@@ -23,7 +26,6 @@ def load_json(file_path, default_type=dict):
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if default_type == dict and isinstance(data, list):
-                    # 과거 리스트 형태의 데이터 구조 마이그레이션 방어 코드
                     return {"current_id": "default", "sessions": [{"id": "default", "title": "기본 대화방", "messages": data}]}
                 return data
         except:
@@ -55,7 +57,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 인프라 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("멀티 채팅 세션, 실적 현황, 다국어 업무 매뉴얼 챗봇 및 코어워크-Canva 리포트 솔루션 통합 플랫폼")
+st.caption("멀티 채팅 세션, 실적 현황, 매뉴얼 챗봇 및 AI 원터치 PPT 자동 생성 솔루션 통합 플랫폼")
 
 # 🔑 4. API 키 검증 및 세팅
 try:
@@ -88,7 +90,6 @@ if "manual_chat" not in st.session_state:
 with st.sidebar:
     st.header("💬 대화 세션 관리")
     
-    # ➕ 새 채팅방 생성 기능
     if st.button("➕ 새 대화 시작하기", use_container_width=True):
         new_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         st.session_state.chats["sessions"].append({
@@ -100,7 +101,6 @@ with st.sidebar:
         save_json(HISTORY_FILE, st.session_state.chats)
         st.rerun()
 
-    # 🔍 채팅 키워드 검색 엔진
     search_query = st.text_input("🔍 기존 대화 검색 (내용/제목)", "").strip()
     
     valid_sessions = []
@@ -199,13 +199,13 @@ with st.sidebar:
 
 # 📱 7. 기능 분할 탭 마스터 구조 구현
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "💬 비서와의 대화", "📅 일정 관리표", "📊 실적 현황", "📚 업무 매뉴얼 챗봇", "💼 코어워크 & Canva"
+    "💬 비서와의 대화", "📅 일정 관리표", "📊 실적 현황", "📚 업무 매뉴얼 챗봇", "💼 코어워크 & 리포트"
 ])
 
 current_session = next(s for s in st.session_state.chats["sessions"] if s["id"] == st.session_state.chats["current_id"])
 
 # ==========================================
-# 탭 1: 비서와의 대화 (구분 기록 및 멀티 세션 완벽 적용)
+# 탭 1: 비서와의 대화
 # ==========================================
 with tab1:
     st.subheader(f"💬 현재 대화방: {current_session['title']}")
@@ -343,7 +343,7 @@ with tab3:
         st.info("업로드된 실적 데이터가 존재하지 않습니다.")
 
 # ==========================================
-# 탭 4: 📚 업무 매뉴얼 챗봇 (★베트남어 전문 번역 인격 탑재★)
+# 탭 4: 📚 업무 매뉴얼 챗봇
 # ==========================================
 with tab4:
     st.subheader("📚 현장 업무 매뉴얼 전용 챗봇 (베트남어 자동 번역 지원)")
@@ -388,13 +388,11 @@ with tab4:
                 for doc in st.session_state.manual_knowledge:
                     all_context += f"\n[문서: {doc['title']}]\n{doc['content']}\n"
                 
-                # 💡 핵심 수정: 매뉴얼 전문가이자 '베트남어 번역가' 인격을 강하게 부여
                 m_instruction = (
                     "당신은 제조 현장의 완벽한 업무 매뉴얼 전문가이자 전문 베트남어 번역가입니다. "
                     "기본적인 질문에 대한 답변은 반드시 주어진 참조 매뉴얼 내용에만 근거하여 팩트 기반으로 작성하세요. "
                     "단, 사용자가 특정 내용이나 매뉴얼 규정을 '베트남어로 번역'해달라고 요청하는 경우, "
-                    "매뉴얼의 내용을 벗어난 추측이라 판단하지 말고, 즉시 현지 베트남 작업자가 완벽히 이해할 수 있는 "
-                    "가장 자연스럽고 정확한 베트남어로 번역해서 출력해 주십시오."
+                    "즉시 현지 베트남 작업자가 완벽히 이해할 수 있는 자연스럽고 정확한 베트남어로 번역해서 출력해 주십시오."
                 ) + all_context
                 
                 api_m = [{"role": "system", "content": m_instruction}] + st.session_state.manual_chat[:-1] + [{"role": "user", "content": m_prompt}]
@@ -409,13 +407,14 @@ with tab4:
                     st.error(f"⚠️ 매뉴얼 엔진 에러: {e}")
 
 # ==========================================
-# 탭 5: 💼 코어워크 & Canva 보고서
+# 탭 5: 💼 코어워크 & 리포트 (★AI 발표 슬라이드 생성 기능 추가★)
 # ==========================================
 with tab5:
-    st.subheader("💼 생산 엔지니어링 코어워크 및 Canva 자동화")
-    st.caption("제조 현장의 핵심 핵심 업무(Core Work)를 조율하고, Canva에 복사하여 즉시 제출할 수 있는 최고급 보고서 초안을 설계합니다.")
+    st.subheader("💼 생산 엔지니어링 코어워크 및 리포트 자동화")
+    st.caption("제조 현장의 핵심 업무를 조율하고 완벽한 보고서 및 발표 자료를 제작합니다.")
     
     core_menu = st.radio("실행할 코어워크 메뉴를 선택하십시오.", [
+        "📊 AI 자동 발표 슬라이드 생성 (텍스트+이미지+PPT 다운로드)", 
         "🎨 Canva 연동형 고품질 보고서 초안 생성기",
         "📋 핵심 기계 장치(열처리/컴프레서) 안전 점검",
         "✍️ 일일 근무 교대(Shift) 인계 보고서 작성"
@@ -423,12 +422,86 @@ with tab5:
     
     st.markdown("---")
     
-    # 1) Canva 활용 보고서 자동 생성 메뉴
-    if core_menu == "🎨 Canva 연동형 고품질 보고서 초안 생성기":
+    # 1) AI 자동 PPT 생성 메뉴 (신규 기능)
+    if core_menu == "📊 AI 자동 발표 슬라이드 생성 (텍스트+이미지+PPT 다운로드)":
+        st.markdown("### 📊 AI 원터치 파워포인트 생성기")
+        st.info("비서가 입력하신 주제에 맞춰 스스로 발표 문구를 기획하고, 어울리는 일러스트를 그려서 즉시 제출 가능한 PPT 파일(.pptx)로 조립합니다.")
+
+        ppt_topic = st.text_input("발표 주제를 하명하십시오.", "동나이 년짝(Nhon Trach) 공장 3분기 생산성 향상 방안")
+
+        if st.button("🚀 PPT 슬라이드 자동 기획 및 생성 시작", use_container_width=True):
+            with st.spinner("비서가 슬라이드에 들어갈 논리적인 문구와 디자인 프롬프트를 기획하고 있습니다..."):
+                try:
+                    # 1. 텍스트 및 이미지 프롬프트 기획 (JSON 응답 강제)
+                    prompt = f"다음 주제에 대한 2장짜리 프레젠테이션 슬라이드 내용을 작성해. 주제: {ppt_topic}\n" \
+                             f"형식은 반드시 아래의 JSON 포맷으로 대답해야 해.\n" \
+                             f'{{"slide1_title": "메인 제목", "slide1_subtitle": "부제목", "slide2_title": "본문 제목", "slide2_content": "본문 핵심 요약(글머리기호 3~4개)", "slide2_image_prompt": "본문 내용에 어울리는 고품질 일러스트를 DALL-E가 그릴 수 있도록 상세한 영문 프롬프트 작성"}}'
+
+                    res = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[{"role": "system", "content": "You are an expert presentation designer. Always output valid JSON."},
+                                  {"role": "user", "content": prompt}],
+                        response_format={"type": "json_object"}
+                    )
+                    ppt_data = json.loads(res.choices[0].message.content)
+
+                    # 2. 이미지 생성 및 다운로드
+                    st.info("🎨 기획된 문구에 어울리는 맞춤형 삽화를 캔버스에 그리고 있습니다...")
+                    img_res = client.images.generate(model="dall-e-3", prompt=ppt_data["slide2_image_prompt"], size="1024x1024")
+                    image_url = img_res.data[0].url
+
+                    req = urllib.request.Request(image_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req) as response:
+                        img_bytes = response.read()
+
+                    # 3. PPTX 조립
+                    st.info("📊 텍스트와 그림을 파워포인트 파일로 조립하고 있습니다...")
+                    prs = Presentation()
+
+                    # 슬라이드 1 (제목)
+                    slide1 = prs.slides.add_slide(prs.slide_layouts[0])
+                    slide1.shapes.title.text = ppt_data.get("slide1_title", "제목")
+                    slide1.placeholders[1].text = ppt_data.get("slide1_subtitle", "부제목")
+
+                    # 슬라이드 2 (본문 + 이미지)
+                    slide2 = prs.slides.add_slide(prs.slide_layouts[5])
+                    slide2.shapes.title.text = ppt_data.get("slide2_title", "본문 제목")
+
+                    txBox = slide2.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(4.5), Inches(5))
+                    tf = txBox.text_frame
+                    tf.word_wrap = True
+                    tf.text = ppt_data.get("slide2_content", "내용")
+
+                    img_stream = BytesIO(img_bytes)
+                    slide2.shapes.add_picture(img_stream, Inches(5.2), Inches(1.5), width=Inches(4.5))
+
+                    ppt_stream = BytesIO()
+                    prs.save(ppt_stream)
+                    ppt_stream.seek(0)
+
+                    # 다운로드 버튼 및 미리보기 제공
+                    st.success("✨ 파워포인트 파일 조립을 완벽하게 마쳤습니다! 아래 버튼을 눌러 다운로드하십시오.")
+                    st.download_button(
+                        label="📥 완성된 PPT 파일 다운로드 (.pptx)",
+                        data=ppt_stream,
+                        file_name=f"{ppt_topic}_보고서.pptx",
+                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    )
+
+                    st.markdown("---")
+                    st.markdown(f"**[미리보기] 슬라이드 1 제목:** {ppt_data.get('slide1_title')}")
+                    st.markdown(f"**[미리보기] 슬라이드 2 본문:** \n{ppt_data.get('slide2_content')}")
+                    st.image(image_url, caption="슬라이드에 삽입된 맞춤형 일러스트")
+
+                except Exception as e:
+                    st.error(f"⚠️ PPT 자동 생성 중 에러가 발생했습니다: {e}")
+
+    # 2) Canva 활용 보고서 자동 생성 메뉴
+    elif core_menu == "🎨 Canva 연동형 고품질 보고서 초안 생성기":
         st.markdown("### 🎨 Canva 파워포인트/보고서 템플릿 맞춤형 텍스트 설계 가이드")
         st.info("원하시는 보고서 주제나 대시보드 데이터를 기반으로 Canva 레이아웃 박스에 최적화된 블록형 초안을 빌드합니다.")
         
-        report_topic = st.text_input("보고서 주제 입력 (예: 당월 가동율 및 PPM 종합 분석 보고서)", "생산성 및 품질 지표 종합 분석 보고서")
+        report_topic = st.text_input("보고서 주제 입력", "생산성 및 품질 지표 종합 분석 보고서")
         report_data_source = st.checkbox("현재 당월 누적 실적 데이터를 보고서에 자동 반영", value=True)
         
         if st.button("🚀 Canva 맞춤형 고급 초안 생성"):
@@ -455,7 +528,7 @@ with tab5:
                 except Exception as e:
                     st.error(f"⚠️ 보고서 빌더 통신 에러: {e}")
 
-    # 2) 핵심 기계 장치 안전 점검 코어워크 메뉴
+    # 3) 핵심 기계 장치 안전 점검 코어워크 메뉴
     elif core_menu == "📋 핵심 기계 장치(열처리/컴프레서) 안전 점검":
         st.markdown("### 📋 현장 핵심 설비 체크리스트 운영")
         st.checkbox("1. 열처리 공정로 내부 압력 및 히터 인입 전류 측정 (정상)")
@@ -464,7 +537,7 @@ with tab5:
         if st.button("점검 완료 로그 기록 및 비서에게 보고"):
             st.toast("✅ 설비 체크리스트가 마스터 로그에 정상 인계되었습니다.")
 
-    # 3) 근무 교대 인계 보고서 코어워크 메뉴
+    # 4) 근무 교대 인계 보고서 코어워크 메뉴
     elif core_menu == "✍️ 일일 근무 교대(Shift) 인계 보고서 작성":
         st.markdown("### ✍️ Shift Handovers 공정 인계서 자동 포맷터")
         current_shift = st.selectbox("현재 근무조 선택", ["주간조 (Day Shift)", "야간조 (Night Shift)"])
