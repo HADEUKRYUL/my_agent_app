@@ -17,7 +17,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 HISTORY_FILE = "chat_history.json"
 SCHEDULE_FILE = "schedule_history.json"
 PRODUCTION_FILE = "production_history.json"
-MANUAL_KNOWLEDGE_FILE = "manual_knowledge.json"
+MANUAL_KNOWLEDGE_FILE = "manual_knowledge.json" # 매뉴얼 영구 보존 DB
 MANUAL_CHAT_FILE = "manual_chat_history.json"
 
 def load_json(file_path, default_type=dict):
@@ -57,7 +57,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 인프라 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("멀티 채팅 세션, 실적 현황, 매뉴얼 챗봇 및 AI 원터치 PPT 자동 생성 솔루션 통합 플랫폼")
+st.caption("실적 현황, 매뉴얼 자가학습(Q&A) 진화, AI 자동 PPT 생성 및 다국어 지원 플랫폼")
 
 # 🔑 4. API 키 검증 및 세팅
 try:
@@ -199,7 +199,7 @@ with st.sidebar:
 
 # 📱 7. 기능 분할 탭 마스터 구조 구현
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "💬 비서와의 대화", "📅 일정 관리표", "📊 실적 현황", "📚 업무 매뉴얼 챗봇", "💼 코어워크 & 리포트"
+    "💬 비서와의 대화", "📅 일정 관리표", "📊 실적 현황", "📚 업무 매뉴얼 챗봇 (자가진화)", "💼 코어워크 & 리포트"
 ])
 
 current_session = next(s for s in st.session_state.chats["sessions"] if s["id"] == st.session_state.chats["current_id"])
@@ -243,7 +243,7 @@ with tab1:
         else:
             with st.chat_message("assistant"):
                 with st.spinner("맥락 파악 및 심층 분석 중..."):
-                    system_instruction = "당신은 주인님의 충직한 개인 비서입니다. 과거 대화 맥락과 업로드 데이터를 바탕으로 유능하게 보좌하세요."
+                    system_instruction = "당신은 주인님의 충직한 개인 비서입니다. 베트남 현장의 지식과 과거 대화 맥락을 바탕으로 보좌하세요."
                     messages_for_api = [{"role": "system", "content": system_instruction}] + current_session["messages"][:-1]
                     
                     if image_data:
@@ -343,13 +343,15 @@ with tab3:
         st.info("업로드된 실적 데이터가 존재하지 않습니다.")
 
 # ==========================================
-# 탭 4: 📚 업무 매뉴얼 챗봇
+# 탭 4: 📚 업무 매뉴얼 챗봇 (개별 삭제 및 자가 학습 진화 기능 추가)
 # ==========================================
 with tab4:
-    st.subheader("📚 현장 업무 매뉴얼 전용 챗봇 (베트남어 자동 번역 지원)")
-    with st.expander("🛠️ 매뉴얼 영구 학습 세션 구축"):
+    st.subheader("📚 현장 업무 매뉴얼 전용 챗봇 (능동형 자가 학습)")
+    
+    # 지식 영구 보존 및 개별 삭제 구역
+    with st.expander("🛠️ 매뉴얼 지식베이스 관리 (추가 및 삭제)", expanded=False):
         manual_file = st.file_uploader("학습용 문서 주입 (PDF, TXT, PPTX)", type=["pdf", "txt", "pptx"], key="manual_tab_uploader")
-        if st.button("🧠 비서 인공지능 뇌 훈련 실행"):
+        if st.button("🧠 신규 문서 인공지능 뇌 훈련 실행"):
             if manual_file:
                 with st.spinner("지식 각인 프로세스 가동 중..."):
                     try:
@@ -362,15 +364,29 @@ with tab4:
                         else:
                             ext_text = manual_file.read().decode("utf-8")
                         
-                        st.session_state.manual_knowledge.append({"title": manual_file.name, "content": ext_text[:20000]})
+                        st.session_state.manual_knowledge.append({"title": manual_file.name, "content": ext_text[:30000]})
                         save_json(MANUAL_KNOWLEDGE_FILE, st.session_state.manual_knowledge)
                         st.success(f"✅ '{manual_file.name}' 매뉴얼 지식화 완수!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"⚠️ 지식 추출 에러: {e}")
+                        
+        st.markdown("#### 💾 현재 비서가 기억 중인 매뉴얼 목록")
+        if st.session_state.manual_knowledge:
+            for i, doc in enumerate(st.session_state.manual_knowledge):
+                col_doc_name, col_doc_del = st.columns([8, 2])
+                with col_doc_name:
+                    st.markdown(f"📄 **{doc['title']}**")
+                with col_doc_del:
+                    # 삭제 기능 추가
+                    if st.button("🗑️ 삭제", key=f"del_man_{i}"):
+                        st.session_state.manual_knowledge.pop(i)
+                        save_json(MANUAL_KNOWLEDGE_FILE, st.session_state.manual_knowledge)
+                        st.rerun()
+        else:
+            st.info("현재 두뇌에 저장된 매뉴얼이 없습니다.")
 
-    if st.session_state.manual_knowledge:
-        st.info(f"📚 마스터한 규정: {', '.join([d['title'] for d in st.session_state.manual_knowledge])}")
+    st.markdown("---")
     
     for msg in st.session_state.manual_chat:
         if msg["role"] != "system":
@@ -403,11 +419,28 @@ with tab4:
                     st.markdown(reply)
                     st.session_state.manual_chat.append({"role": "assistant", "content": reply})
                     save_json(MANUAL_CHAT_FILE, st.session_state.manual_chat)
+                    
+                    # 💡 자가 학습(Self-Learning) 로직 자동 실행: 질문과 훌륭한 답변을 스스로 영구 저장
+                    auto_learn_memory = f"\n[현장 실무 Q&A 자가학습 기록]\n질문: {m_prompt}\n비서 모범답안: {reply}\n"
+                    
+                    auto_doc = next((d for d in st.session_state.manual_knowledge if d['title'] == '🧠_비서_자가학습_데이터'), None)
+                    if auto_doc:
+                        auto_doc['content'] += auto_learn_memory
+                        # 용량 최적화 (가장 오래된 기억 삭제하여 약 4만자 유지)
+                        if len(auto_doc['content']) > 40000:
+                            auto_doc['content'] = auto_doc['content'][-40000:]
+                    else:
+                        st.session_state.manual_knowledge.append({
+                            "title": "🧠_비서_자가학습_데이터",
+                            "content": "이 문서는 비서가 사용자와의 질의응답(Q&A)을 통해 현장의 노하우를 스스로 학습하여 축적한 영구 데이터입니다.\n" + auto_learn_memory
+                        })
+                    save_json(MANUAL_KNOWLEDGE_FILE, st.session_state.manual_knowledge)
+                    
                 except Exception as e:
                     st.error(f"⚠️ 매뉴얼 엔진 에러: {e}")
 
 # ==========================================
-# 탭 5: 💼 코어워크 & 리포트 (★AI 발표 슬라이드 생성 기능 추가★)
+# 탭 5: 💼 코어워크 & 리포트
 # ==========================================
 with tab5:
     st.subheader("💼 생산 엔지니어링 코어워크 및 리포트 자동화")
@@ -422,12 +455,12 @@ with tab5:
     
     st.markdown("---")
     
-    # 1) AI 자동 PPT 생성 메뉴 (신규 기능)
+    # 1) AI 자동 PPT 생성 메뉴
     if core_menu == "📊 AI 자동 발표 슬라이드 생성 (텍스트+이미지+PPT 다운로드)":
         st.markdown("### 📊 AI 원터치 파워포인트 생성기")
         st.info("비서가 입력하신 주제에 맞춰 스스로 발표 문구를 기획하고, 어울리는 일러스트를 그려서 즉시 제출 가능한 PPT 파일(.pptx)로 조립합니다.")
 
-        ppt_topic = st.text_input("발표 주제를 하명하십시오.", "동나이 년짝(Nhon Trach) 공장 3분기 생산성 향상 방안")
+        ppt_topic = st.text_input("발표 주제를 하명하십시오.", "동나이 년짝(Nhon Trach) 공장 생산성 향상 방안")
 
         if st.button("🚀 PPT 슬라이드 자동 기획 및 생성 시작", use_container_width=True):
             with st.spinner("비서가 슬라이드에 들어갈 논리적인 문구와 디자인 프롬프트를 기획하고 있습니다..."):
