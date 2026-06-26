@@ -57,7 +57,7 @@ if "scheduler" not in st.session_state:
 # ⚙️ 3. 페이지 기본 인프라 설정
 st.set_page_config(page_title="주인님의 전용 비서", page_icon="🤖", layout="wide")
 st.title("🤖 나만의 특급 비서 에이전트")
-st.caption("생산실적현황, 매뉴얼 자가학습, 데이터 분석 센터, 다국어 번역 및 AI PPT 생성 통합 플랫폼")
+st.caption("생산실적현황, 매뉴얼 자가학습, 데이터 분석 센터 및 AI PPT 생성 솔루션 통합 플랫폼")
 
 # 🔑 4. API 키 검증 및 세팅
 try:
@@ -87,10 +87,8 @@ if "manual_chat" not in st.session_state:
     st.session_state.manual_chat = load_json(MANUAL_CHAT_FILE, default_type=list)
 if "data_chat" not in st.session_state:
     st.session_state.data_chat = []
-if "translation_result" not in st.session_state:
-    st.session_state.translation_result = ""
 
-# 📁 6. 왼쪽 사이드바 구성 (대화방 관리, 업로드 및 [신규] 빠른 번역기)
+# 📁 6. 왼쪽 사이드바 구성 (멀티 채팅방 생성, 검색 및 데이터 업로드)
 with st.sidebar:
     st.header("💬 대화 세션 관리")
     
@@ -198,35 +196,6 @@ with st.sidebar:
         except Exception as e:
             st.error(f"⚠️ 파일 처리 실패: {e}")
 
-    # 💡 [신규 추가] 화면 좌측 사이드바 상시 번역기 💡
-    st.markdown("---")
-    st.header("🌐 퀵 실시간 번역기")
-    target_lang = st.radio("도착 언어를 선택하십시오:", ["베트남어", "영어", "한국어"], horizontal=True)
-    translate_text = st.text_area("번역할 내용을 입력하십시오.", height=100)
-    
-    if st.button("🚀 번역 실행", use_container_width=True):
-        if translate_text.strip():
-            with st.spinner("번역 중입니다..."):
-                try:
-                    sys_prompt = f"당신은 제조 현장의 전문 번역가입니다. 제공된 텍스트의 의미와 뉘앙스를 살려 {target_lang}로 자연스럽게 번역하세요. 결과만 깔끔하게 출력하세요."
-                    res = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": sys_prompt},
-                            {"role": "user", "content": translate_text}
-                        ],
-                        temperature=0.3
-                    )
-                    st.session_state.translation_result = res.choices[0].message.content
-                except Exception as e:
-                    st.error(f"⚠️ 번역 중 에러가 발생했습니다: {e}")
-        else:
-            st.warning("번역할 텍스트를 입력해 주십시오.")
-
-    if st.session_state.translation_result:
-        st.success("✅ 번역 결과:")
-        st.info(st.session_state.translation_result)
-        
     st.markdown("---")
     st.link_button("🎨 Canva 스튜디오 직행", "https://www.canva.com/", use_container_width=True)
 
@@ -328,7 +297,7 @@ with tab2:
         st.dataframe(df_schedule.sort_values(by="DateTime").reset_index(drop=True), use_container_width=True)
 
 # ==========================================
-# 탭 3: 생산실적현황
+# 탭 3: 생산실적현황 (명칭 변경)
 # ==========================================
 with tab3:
     st.subheader("📊 생산실적현황 (작업장 단위 고도화)")
@@ -435,7 +404,7 @@ with tab4:
             st.markdown(m_prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("매뉴얼 데이터베이스 스캔 중..."):
+            with st.spinner("매뉴얼 데이터베이스 스캔 및 번역 중..."):
                 all_context = "\n\n--- 참조 매뉴얼 원본 데이터 ---\n"
                 for doc in st.session_state.manual_knowledge:
                     all_context += f"\n[문서: {doc['title']}]\n{doc['content']}\n"
@@ -473,12 +442,13 @@ with tab4:
                     st.error(f"⚠️ 매뉴얼 엔진 에러: {e}")
 
 # ==========================================
-# 탭 5: 💼 코어워크 & 리포트
+# 탭 5: 💼 코어워크 & 리포트 (삭제 요청 반영)
 # ==========================================
 with tab5:
     st.subheader("💼 생산 엔지니어링 코어워크 및 리포트 자동화")
     st.caption("제조 현장의 핵심 업무를 조율하고 완벽한 보고서 및 발표 자료를 제작합니다.")
     
+    # 지시하신 대로 기계 점검과 근무 교대 인계 메뉴를 삭제했습니다.
     core_menu = st.radio("실행할 코어워크 메뉴를 선택하십시오.", [
         "📊 AI 자동 발표 슬라이드 생성 (텍스트+이미지+PPT 다운로드)", 
         "🎨 Canva 연동형 고품질 보고서 초안 생성기"
@@ -585,7 +555,7 @@ with tab5:
                     st.error(f"⚠️ 보고서 빌더 통신 에러: {e}")
 
 # ==========================================
-# 탭 6: 📈 데이터 분석 센터
+# 탭 6: 📈 데이터 분석 센터 (신규 탭 추가)
 # ==========================================
 with tab6:
     st.subheader("📈 자유 데이터 분석 센터")
@@ -616,6 +586,7 @@ with tab6:
 
                 with st.chat_message("assistant"):
                     with st.spinner("비서가 엑셀 데이터의 패턴을 정밀 분석하고 있습니다..."):
+                        # 데이터 용량 조절 (초과 방지)
                         data_str = df_analysis.to_string()
                         if len(data_str) > 25000:
                             data_str = f"데이터가 너무 커서 통계 요약 및 상위 100행만 제공합니다.\n\n[데이터 통계 요약]\n{df_analysis.describe().to_string()}\n\n[상위 100행]\n{df_analysis.head(100).to_string()}"
